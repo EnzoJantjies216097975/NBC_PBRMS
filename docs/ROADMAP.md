@@ -44,12 +44,16 @@ layer modules onto the same data model.
 - ⏳ Month-end reminder to supervisors (a week before) — needs the scheduled-jobs/notifications layer.
 - ⏳ Printable daily roster (the live daily calendar already exists in Phase 2).
 
-## Phase 4 — Execution & overtime
+## Phase 4 — Execution & overtime (in progress)
 
-- 1-hour-before reminders; attendance confirmation + "signal missing operator"; start/end logging.
-- Overtime computation into `overtime_entries`; operator overtime view + **printable Annexure B**.
-- Operator production reports with severity + help guide.
-- Stand-in logging; ghost-booking / location-shoot mitigations.
+- ✅ Producer **run page**: confirm attendance, **signal a missing operator** (notify + phone shown),
+  **start/end** logging (`production_logs`); overrun (≥30 min) flagged and the crew's supervisors notified.
+- ✅ Operator **overtime view** computed daily from the logs (weekday 8h / Sat 5h / Sun all-OT) with a
+  **printable Annexure-B sheet** (print CSS + `PrintButton`, shell hidden via `no-print`).
+- ✅ Operator **production reports** with severity + an in-page severity help guide.
+- ⏳ 1-hour-before reminders (needs the scheduled-jobs layer).
+- ⏳ Stand-in logging; explicit ghost-booking / location-shoot abuse reports (attendance + start/end
+  logging already capture the underlying data).
 
 ## Phase 5 — Storeroom, transport & APP
 

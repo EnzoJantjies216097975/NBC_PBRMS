@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden w-64 shrink-0 flex-col bg-nbc-dark text-white md:flex">
+      <aside className="no-print hidden w-64 shrink-0 flex-col bg-nbc-dark text-white md:flex">
         <div className="border-b border-white/10 px-5 py-4">
           <div className="text-lg font-bold">NBC PBRMS</div>
           <div className="text-xs text-white/70">{USER_ROLE_LABELS[profile.role]}</div>
@@ -42,7 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
+        <header className="no-print flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
           <div className="text-sm text-slate-500">
             {USER_ROLE_LABELS[profile.role]} &middot; {fullName(profile)}
           </div>

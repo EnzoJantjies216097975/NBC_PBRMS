@@ -48,6 +48,11 @@ export default async function ProducerHome() {
                 </p>
               )}
             </div>
+            {['confirmed', 'in_progress', 'completed'].includes(b.status) && (
+              <Link href={`/producer/run/${b.id}`} className="btn-ghost shrink-0">
+                Run
+              </Link>
+            )}
           </div>
         ))}
       </div>
