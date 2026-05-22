@@ -55,18 +55,31 @@ layer modules onto the same data model.
 - ⏳ Stand-in logging; explicit ghost-booking / location-shoot abuse reports (attendance + start/end
   logging already capture the underlying data).
 
-## Phase 5 — Storeroom, transport & APP
+## Phase 5 — Storeroom, transport & APP ✅
 
-- Equipment inventory by serial number; book-out → approve → checkout → return + free-again alerts.
-- Transport list (pickups) + car bookings (vehicles to go out), both printable.
-- APP fast-track flow with Sound Supervisor logging.
+- ✅ **Storeroom** (`/storeroom`, all roles): inventory by serial number with "held by", operator
+  request → supervisor approve+checkout / deny → mark returned, and a **free-again waitlist notify**
+  to the next requester on return.
+- ✅ **Transport list** (`/booking-officer/transport`): printable per-date pickup list (name, phone,
+  address, production, pickup/drop-off) derived from crew flagged `needs_transport`.
+- ✅ **Car-booking visibility**: a 🚗 badge on the operator's schedule for assignments flagged
+  `needs_car_booking` in the crew picker.
+- ✅ **APP fast-track** (`/producer/app`): producer books a confirmed `audio_post` session that
+  bypasses the pipeline, assigns the two APP operators (via a scoped RLS policy), and notifies the
+  Sound Supervisor + Booking Officer. Sound Supervisor **APP usage log** (`/supervisor/app-log`)
+  shows each session's production, when, operators, and logged duration.
 
-## Phase 6 — Realtime, notifications, reports
+## Phase 6 — Realtime, notifications, reports (in progress)
 
 - ✅ In-app notifications inbox (`/notifications`) + header bell with unread badge + mark read/all.
-- Supabase Realtime everywhere; Expo push; **SMS fallback** via Edge Function + Namibian gateway.
-- Reports & analytics dashboards, all printable (overtime, studio usage, cancellations, trip
-  fairness, underutilisation). Department calendar + clash view for EPs.
+- ✅ **Reports & analytics** (`/reports`, printable, month nav): overtime per operator + total,
+  studio usage, trips & locations (with crew), cancellations, and underutilised-operator flags.
+  Pure aggregation in `apps/web/lib/reports.ts`.
+- ✅ **EP department calendar** (`/exec-producer/calendar`): whole-day clash view + the EP's own
+  department's productions with crew + gear, date navigation.
+- ✅ **Live in-app notifications** via Supabase Realtime (`0007_realtime.sql` + `RealtimeRefresh`):
+  the bell/inbox update without a page refresh.
+- ⏳ Realtime on bookings/calendars; Expo push; **SMS fallback** via Edge Function + Namibian gateway.
 
 ## Phase 7 — Hardening & launch
 

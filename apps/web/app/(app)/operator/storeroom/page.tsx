@@ -1,10 +1,6 @@
-import { Placeholder } from '@/components/Placeholder';
+import { redirect } from 'next/navigation';
 
-export default function OperatorStoreroomPage() {
-  return (
-    <Placeholder title="Storeroom">
-      See inventory by serial number, who has what gear and on which production, book equipment out
-      (supervisors/technicians approve), and get alerts when gear is free again. Coming next phase.
-    </Placeholder>
-  );
+// The storeroom moved to a shared top-level route accessible to all roles.
+export default function LegacyOperatorStoreroom() {
+  redirect('/storeroom');
 }

@@ -61,6 +61,21 @@ export default async function AssignPage({
   for (const d of depts ?? []) deptIdByName[d.name] = d.id;
   const deptIds = Object.values(deptIdByName);
 
+  // Storeroom availability for the booking's requested specialised gear, so the
+  // supervisor can tell whether the production is actually possible.
+  let gear: { name: string; status: string }[] = [];
+  if (booking.specialised_equipment.length > 0) {
+    const { data } = await supabase.from('equipment').select('name, status');
+    gear = data ?? [];
+  }
+  const gearAvailability = booking.specialised_equipment.map((key) => {
+    const token = key.split('_')[0] ?? key;
+    return {
+      label: SPECIALISED_EQUIPMENT_LABELS[key as SpecialisedEquipment] ?? key,
+      matches: gear.filter((g) => g.name.toLowerCase().includes(token)),
+    };
+  });
+
   // Operators in those departments, with their skills.
   const { data: operators } = await supabase
     .from('profiles')
@@ -155,10 +170,30 @@ export default async function AssignPage({
         {booking.venue ? ` · ${booking.venue}` : ''} ·{' '}
         {fmtDateTimeRange(booking.call_date, booking.call_time, booking.end_time)}
       </p>
-      {booking.specialised_equipment.length > 0 && (
-        <p className="mb-4 text-sm text-slate-500">
-          Requested gear: {booking.specialised_equipment.join(', ')}
-        </p>
+      {gearAvailability.length > 0 && (
+        <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+          <p className="mb-1 font-medium text-slate-600">Requested gear — storeroom availability:</p>
+          <ul className="space-y-0.5">
+            {gearAvailability.map((g) => (
+              <li key={g.label} className="text-slate-600">
+                <span className="font-medium">{g.label}:</span>{' '}
+                {g.matches.length === 0 ? (
+                  <span className="text-slate-400">not tracked in storeroom</span>
+                ) : (
+                  g.matches.map((m, i) => (
+                    <span key={m.name}>
+                      {i > 0 ? ', ' : ''}
+                      {m.name}{' '}
+                      <span className={m.status === 'available' ? 'text-emerald-700' : 'text-red-600'}>
+                        ({m.status.replace('_', ' ')})
+                      </span>
+                    </span>
+                  ))
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {error && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 

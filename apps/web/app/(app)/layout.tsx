@@ -3,6 +3,7 @@ import { USER_ROLE_LABELS, fullName } from '@nbc/shared';
 import { requireProfile } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { NAV_BY_ROLE } from '@/lib/nav';
+import { RealtimeRefresh } from '@/components/RealtimeRefresh';
 import { signOut } from '../(auth)/actions';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -20,6 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen">
+      <RealtimeRefresh userId={userId} />
       <aside className="no-print hidden w-64 shrink-0 flex-col bg-nbc-dark text-white md:flex">
         <div className="border-b border-white/10 px-5 py-4">
           <div className="text-lg font-bold">NBC PBRMS</div>

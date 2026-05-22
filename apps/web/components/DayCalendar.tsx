@@ -105,25 +105,18 @@ export function DayCalendar({
                     {bar.subtitle && <span className="truncate opacity-80">{bar.subtitle}</span>}
                   </>
                 );
-                return bar.standing ? (
-                  <div
-                    key={bar.id}
-                    title={tooltip}
-                    className={`${base} border border-dashed border-slate-400 bg-white/70 text-slate-500 ${ring}`}
-                    style={style}
-                  >
-                    {inner}
-                  </div>
-                ) : (
-                  <Link
-                    key={bar.id}
-                    href={bar.href}
-                    title={tooltip}
-                    className={`${base} ${BAR_STYLE[bar.status]} ${ring}`}
-                    style={style}
-                  >
+                const styleClass = bar.standing
+                  ? 'border border-dashed border-slate-400 bg-white/70 text-slate-500'
+                  : BAR_STYLE[bar.status];
+                const className = `${base} ${styleClass} ${ring}`;
+                return bar.href && !bar.standing ? (
+                  <Link key={bar.id} href={bar.href} title={tooltip} className={className} style={style}>
                     {inner}
                   </Link>
+                ) : (
+                  <div key={bar.id} title={tooltip} className={className} style={style}>
+                    {inner}
+                  </div>
                 );
               })}
             </div>

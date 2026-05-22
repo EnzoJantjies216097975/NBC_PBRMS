@@ -10,6 +10,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   producer: [
     { href: '/producer', label: 'My Productions' },
     { href: '/producer/new', label: 'New Booking' },
+    { href: '/producer/app', label: 'Audio Post (APP)' },
   ],
   executive_producer: [
     { href: '/exec-producer', label: 'Incoming Bookings' },
@@ -20,6 +21,8 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { href: '/supervisor', label: 'Awaiting Crew' },
     { href: '/supervisor/operators', label: 'My Operators' },
     { href: '/supervisor/roster', label: 'Monthly Roster' },
+    { href: '/supervisor/app-log', label: 'APP Log' },
+    { href: '/storeroom', label: 'Storeroom' },
     { href: '/reports', label: 'Reports' },
   ],
   booking_officer: [
@@ -33,7 +36,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { href: '/operator/roster', label: 'My Roster' },
     { href: '/operator/overtime', label: 'My Overtime' },
     { href: '/operator/reports', label: 'Production Reports' },
-    { href: '/operator/storeroom', label: 'Storeroom' },
+    { href: '/storeroom', label: 'Storeroom' },
   ],
   manager: [
     { href: '/reports', label: 'Reports' },
