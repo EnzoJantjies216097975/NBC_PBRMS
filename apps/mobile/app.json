@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "NBC PBRMS",
+    "slug": "nbc-pbrms",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "nbcpbrms",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#063662"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "na.com.nbc.pbrms"
+    },
+    "android": {
+      "package": "na.com.nbc.pbrms"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    }
+  }
+}
