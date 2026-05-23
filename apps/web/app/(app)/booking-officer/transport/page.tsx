@@ -23,7 +23,7 @@ export default async function TransportListPage({
   const { data: rows } = await supabase
     .from('booking_crew')
     .select(
-      'id, profile:profiles(first_name, last_name, phone, physical_address), ' +
+      'id, profile:profiles!booking_crew_profile_id_fkey(first_name, last_name, phone, physical_address), ' +
         'booking:bookings!inner(title, call_date, call_time, end_time, air_end, status)',
     )
     .eq('needs_transport', true)

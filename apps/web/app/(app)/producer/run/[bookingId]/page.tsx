@@ -20,7 +20,7 @@ export default async function RunPage({ params }: { params: Promise<{ bookingId:
     .from('bookings')
     .select(
       'id, title, status, location_type, venue, call_date, call_time, end_time, ' +
-        'booking_crew(id, role_label, attended, profile:profiles(first_name, last_name, phone)), ' +
+        'booking_crew(id, role_label, attended, profile:profiles!booking_crew_profile_id_fkey(first_name, last_name, phone)), ' +
         'production_logs(actual_start, actual_end, overtime_minutes, is_overtime)',
     )
     .eq('id', bookingId)

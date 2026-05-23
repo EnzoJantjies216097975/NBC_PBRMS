@@ -33,7 +33,7 @@ export default async function AppLogPage() {
     .from('bookings')
     .select(
       'id, title, status, call_date, call_time, end_time, ' +
-        'booking_crew(profile:profiles(first_name, last_name)), ' +
+        'booking_crew(profile:profiles!booking_crew_profile_id_fkey(first_name, last_name)), ' +
         'production_logs(actual_start, actual_end)',
     )
     .eq('location_type', 'audio_post')

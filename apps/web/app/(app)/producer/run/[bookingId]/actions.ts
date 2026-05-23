@@ -134,7 +134,7 @@ export async function endProduction(formData: FormData) {
   if (isOvertime) {
     const { data: crew } = await supabase
       .from('booking_crew')
-      .select('profile:profiles(supervisor_id)')
+      .select('profile:profiles!booking_crew_profile_id_fkey(supervisor_id)')
       .eq('booking_id', bookingId);
     const supervisorIds = new Set<string>();
     for (const c of crew ?? []) {

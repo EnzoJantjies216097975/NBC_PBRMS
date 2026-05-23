@@ -32,7 +32,7 @@ export default async function StoreroomPage({
 
   const { data: checkedOut } = await supabase
     .from('equipment_bookings')
-    .select('id, equipment_id, requested_by, profile:profiles(first_name, last_name), booking:bookings(title)')
+    .select('id, equipment_id, requested_by, profile:profiles!equipment_bookings_requested_by_fkey(first_name, last_name), booking:bookings(title)')
     .eq('status', 'checked_out');
   const holder = new Map<string, { name: string; production?: string }>();
   for (const c of checkedOut ?? []) {
@@ -60,7 +60,7 @@ export default async function StoreroomPage({
     ? (
         await supabase
           .from('equipment_bookings')
-          .select('id, equipment_id, requested_by, notes, equipment:equipment(name), profile:profiles(first_name, last_name)')
+          .select('id, equipment_id, requested_by, notes, equipment:equipment(name), profile:profiles!equipment_bookings_requested_by_fkey(first_name, last_name)')
           .eq('status', 'requested')
           .order('created_at')
       ).data

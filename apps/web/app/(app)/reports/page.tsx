@@ -25,7 +25,7 @@ export default async function ReportsPage({
     .from('bookings')
     .select(
       'id, title, status, location_type, call_date, call_time, end_time, ' +
-        'booking_crew(profile_id, profile:profiles(first_name, last_name)), ' +
+        'booking_crew(profile_id, profile:profiles!booking_crew_profile_id_fkey(first_name, last_name)), ' +
         'production_logs(actual_start, actual_end)',
     )
     .gte('call_date', start)

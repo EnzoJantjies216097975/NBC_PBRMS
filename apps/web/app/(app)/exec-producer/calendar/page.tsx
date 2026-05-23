@@ -47,7 +47,7 @@ export default async function ExecProducerCalendarPage({
     .from('bookings')
     .select(
       'id, title, status, location_type, call_time, end_time, air_end, content_department_id, specialised_equipment, ' +
-        'booking_crew(profile_id, profile:profiles(first_name, last_name))',
+        'booking_crew(profile_id, profile:profiles!booking_crew_profile_id_fkey(first_name, last_name))',
     )
     .eq('call_date', date)
     .not('status', 'in', '(draft,cancelled)')

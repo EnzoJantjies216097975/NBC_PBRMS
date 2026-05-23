@@ -43,7 +43,7 @@ export default async function BookingDetailPage({
   const { data: crew } = await supabase
     .from('booking_crew')
     .select(
-      'id, role_label, status, needs_car_booking, needs_transport, profile:profiles(first_name, last_name, phone)',
+      'id, role_label, status, needs_car_booking, needs_transport, profile:profiles!booking_crew_profile_id_fkey(first_name, last_name, phone)',
     )
     .eq('booking_id', bookingId);
 
