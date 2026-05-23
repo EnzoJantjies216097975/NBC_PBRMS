@@ -1,3 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Keep a single Supabase client version that matches @supabase/ssr + the
+# hand-authored Database types. (pnpm 10+ reads overrides from here.)
+overrides:
+  "@supabase/supabase-js": "2.45.4"
