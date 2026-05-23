@@ -43,17 +43,22 @@ Everything in this repo except the dependency install works fully offline.
 
 ```bash
 supabase start          # boots Postgres, Auth, Studio, etc. in Docker
-supabase db reset       # applies migrations 0001–0003 (schema, RLS, seed)
+supabase db reset       # applies migrations 0001–0008 (schema, RLS, seed)
 ```
 
 Grab the local **API URL** and **anon key** from `supabase start` output (or `supabase status`) and
 put them in the env files. For a hosted project, use the values from Project Settings → API.
 
-Generate fresh DB types after schema changes:
+**Generate DB types — required before `build`/`typecheck`:**
 
 ```bash
 pnpm db:gen-types       # overwrites packages/shared/src/database.types.ts
 ```
+
+The committed `database.types.ts` is a *partial stub*: it covers the booking-pipeline tables so
+`pnpm dev` runs (Next.js doesn't type-check in dev), but `pnpm build` and `pnpm typecheck` need the
+**full** generated types (every table + relationships) — so run `db:gen-types` after `db reset` and
+re-run it whenever the schema changes.
 
 ## Environment files
 
@@ -70,6 +75,19 @@ pnpm dev:mobile     # Expo dev server (scan QR with Expo Go, or run a simulator)
 pnpm typecheck      # type-check every package
 pnpm build          # build all
 ```
+
+## Notifications & delivery
+
+- **In-app** notifications work out of the box (the `notifications` table + RLS).
+- **Live updates** use Supabase Realtime — migrations `0007`/`0008` add `notifications`, `bookings`,
+  and `booking_crew` to the `supabase_realtime` publication, so the bell, inbox, and schedule views
+  refresh without reloading.
+- **Push + SMS** are delivered by the `notify-dispatch` Edge Function. To enable:
+  1. `supabase functions deploy notify-dispatch`
+  2. Set the SMS gateway secrets (`SMS_PROVIDER_URL`, `SMS_PROVIDER_API_KEY`, `SMS_PROVIDER_SENDER_ID`).
+  3. Add a Database Webhook on `notifications` INSERT → `notify-dispatch` (or the `pg_net` trigger).
+  See `supabase/functions/notify-dispatch/README.md`. Operators without a smartphone get SMS when
+  their profile has `prefers_sms = true`; mobile devices self-register push tokens on login.
 
 ## Creating your first users
 

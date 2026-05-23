@@ -54,17 +54,27 @@ pnpm install
 
 # 2. Start Supabase locally (needs Docker) and apply migrations + seed
 supabase start
-supabase db reset           # runs migrations 0001–0003
+supabase db reset           # runs migrations 0001–0008
 
-# 3. Configure env
+# 3. Generate DB types (REQUIRED before build/typecheck — see note below)
+pnpm db:gen-types
+
+# 4. Configure env
 cp .env.example .env
 cp apps/web/.env.local.example apps/web/.env.local       # fill in Supabase URL + anon key
 cp apps/mobile/.env.example apps/mobile/.env
 
-# 4. Run
+# 5. Run
 pnpm dev:web        # http://localhost:3000
 pnpm dev:mobile     # Expo dev server
+pnpm test           # unit tests for the pure logic
 ```
+
+> **Important — DB types are a prerequisite for building.** The committed
+> `packages/shared/src/database.types.ts` is a *partial stub* (enough for `pnpm dev`,
+> which doesn't type-check). Run `pnpm db:gen-types` after `supabase db reset` to
+> regenerate the full typed schema — `pnpm build` / `pnpm typecheck` need it. After
+> installing, also run `cd apps/mobile && npx expo install --fix` to align native deps.
 
 ## Documentation
 

@@ -79,9 +79,21 @@ layer modules onto the same data model.
   department's productions with crew + gear, date navigation.
 - ✅ **Live in-app notifications** via Supabase Realtime (`0007_realtime.sql` + `RealtimeRefresh`):
   the bell/inbox update without a page refresh.
-- ⏳ Realtime on bookings/calendars; Expo push; **SMS fallback** via Edge Function + Namibian gateway.
+- ✅ **Live schedules**: `0008` adds bookings + crew to realtime; `ScheduleRealtime` refreshes the
+  daily calendar, EP calendar, supervisor and operator schedules on any booking/crew change.
+- ✅ **Off-app delivery scaffolded**: `notify-dispatch` Edge Function fans new notifications to
+  **Expo push** (devices register in `device_tokens`) and **SMS** for operators flagged
+  `prefers_sms`. Needs deploy + a Database Webhook + SMS-gateway config (see the function README).
 
-## Phase 7 — Hardening & launch
+## Phase 7 — Hardening & launch (in progress)
 
-- Sentry, audit-log review UI, role-assignment admin UI, e2e tests, Vercel + Cloudflare + NameCheap
-  deployment, data import of existing crew/operators.
+- ✅ **Role-assignment admin** (`/admin`): editable role + department + active per person.
+- ✅ **Supervisor "My Operators"** (`/supervisor/operators`): tag skills/gear + flags
+  (needs-transport, prefers-SMS, can-go-on-trips).
+- ✅ **Audit-log viewer** (`/audit`, managers/admin): pipeline actions, overrides, admin changes.
+- ✅ **Deployment guide** ([DEPLOY.md](DEPLOY.md)): Supabase + Vercel + Cloudflare/NameCheap + EAS.
+- ✅ **Unit tests** (Vitest) for the pure logic — overtime, conflicts, recommendations, recurring
+  productions, reports aggregation, and day-schedule clash detection (`pnpm test`).
+- ⏳ Sentry wiring (`@sentry/nextjs` + `@sentry/react-native`; DSN placeholders in `.env.example`).
+- ⏳ e2e tests (Playwright against the web app).
+- ⏳ Actual deployment + data import of real crew/operators.
