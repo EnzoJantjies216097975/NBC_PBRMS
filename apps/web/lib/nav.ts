@@ -41,9 +41,11 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   manager: [
     { href: '/reports', label: 'Reports' },
     { href: '/booking-officer/bookings', label: 'All Bookings' },
+    { href: '/audit', label: 'Audit Log' },
   ],
   admin: [
     { href: '/admin', label: 'People & Roles' },
     { href: '/reports', label: 'Reports' },
+    { href: '/audit', label: 'Audit Log' },
   ],
 };
