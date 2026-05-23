@@ -3,6 +3,7 @@ import { LOCATION_TYPE_LABELS, fullName, type BookingStatus, type LocationType }
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { DayCalendar, type CalendarRow } from '@/components/DayCalendar';
+import { ScheduleRealtime } from '@/components/ScheduleRealtime';
 import { fmtDate, fmtTime } from '@/lib/format';
 import { addDays, buildDaySchedule, todayIso, type ScheduleBooking } from '@/lib/schedule';
 
@@ -16,14 +17,16 @@ interface RawBooking {
   air_end: string | null;
   content_department_id: string | null;
   specialised_equipment: string[];
-  booking_crew: { profile: { first_name: string; last_name: string } | { first_name: string; last_name: string }[] | null }[] | null;
+  booking_crew:
+    | { profile_id: string; profile: { first_name: string; last_name: string } | { first_name: string; last_name: string }[] | null }[]
+    | null;
 }
 
-function crewNames(b: RawBooking): string[] {
-  return (b.booking_crew ?? [])
-    .map((c) => (Array.isArray(c.profile) ? c.profile[0] : c.profile))
-    .filter((p): p is { first_name: string; last_name: string } => Boolean(p))
-    .map((p) => fullName(p));
+function crewList(b: RawBooking): { profileId: string; name: string }[] {
+  return (b.booking_crew ?? []).map((c) => {
+    const p = Array.isArray(c.profile) ? c.profile[0] : c.profile;
+    return { profileId: c.profile_id, name: p ? fullName(p) : 'Operator' };
+  });
 }
 
 export default async function ExecProducerCalendarPage({
@@ -44,7 +47,7 @@ export default async function ExecProducerCalendarPage({
     .from('bookings')
     .select(
       'id, title, status, location_type, call_time, end_time, air_end, content_department_id, specialised_equipment, ' +
-        'booking_crew(profile:profiles(first_name, last_name))',
+        'booking_crew(profile_id, profile:profiles(first_name, last_name))',
     )
     .eq('call_date', date)
     .not('status', 'in', '(draft,cancelled)')
@@ -60,7 +63,7 @@ export default async function ExecProducerCalendarPage({
     call_time: b.call_time,
     end_time: b.end_time,
     air_end: b.air_end,
-    crew: crewNames(b).map((name, i) => ({ profileId: `${b.id}-${i}`, name })),
+    crew: crewList(b),
   }));
   const { rows, clashMessages } = buildDaySchedule(scheduleBookings);
   const calendarRows: CalendarRow[] = rows.map((r) => ({
@@ -72,6 +75,7 @@ export default async function ExecProducerCalendarPage({
 
   return (
     <div className="mx-auto max-w-6xl">
+      <ScheduleRealtime />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Department Calendar</h1>
@@ -115,7 +119,7 @@ export default async function ExecProducerCalendarPage({
       )}
       <div className="space-y-2">
         {mine.map((b) => {
-          const crew = crewNames(b);
+          const crew = crewList(b).map((c) => c.name);
           return (
             <div key={b.id} className="card text-sm">
               <div className="font-medium">{b.title}</div>

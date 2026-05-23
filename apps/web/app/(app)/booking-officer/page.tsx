@@ -9,6 +9,7 @@ import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { StatusBadge } from '@/components/StatusBadge';
 import { DayCalendar, type CalendarRow } from '@/components/DayCalendar';
+import { ScheduleRealtime } from '@/components/ScheduleRealtime';
 import { fmtDate, fmtTime } from '@/lib/format';
 import {
   AXIS_END_HOUR,
@@ -125,6 +126,7 @@ export default async function BookingOfficerHome({
 
   return (
     <div className="mx-auto max-w-7xl">
+      <ScheduleRealtime />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Daily Schedule</h1>

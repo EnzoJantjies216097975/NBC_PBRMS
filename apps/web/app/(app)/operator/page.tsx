@@ -2,6 +2,7 @@ import { LOCATION_TYPE_LABELS, type LocationType } from '@nbc/shared';
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { fmtDateTimeRange } from '@/lib/format';
+import { ScheduleRealtime } from '@/components/ScheduleRealtime';
 
 export default async function OperatorHome() {
   const { userId } = await requireRole(['operator', 'admin']);
@@ -21,6 +22,7 @@ export default async function OperatorHome() {
 
   return (
     <div className="mx-auto max-w-4xl">
+      <ScheduleRealtime />
       <h1 className="mb-1 text-2xl font-semibold">My Schedule</h1>
       <p className="mb-6 text-sm text-slate-600">Productions you are assigned to.</p>
 

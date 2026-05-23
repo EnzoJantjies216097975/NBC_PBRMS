@@ -3,6 +3,7 @@ import { LOCATION_TYPE_LABELS, type BookingStatus, type LocationType } from '@nb
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { StatusBadge } from '@/components/StatusBadge';
+import { ScheduleRealtime } from '@/components/ScheduleRealtime';
 import { fmtDateTimeRange } from '@/lib/format';
 
 export default async function SupervisorHome() {
@@ -17,6 +18,7 @@ export default async function SupervisorHome() {
 
   return (
     <div className="mx-auto max-w-4xl">
+      <ScheduleRealtime />
       <h1 className="mb-1 text-2xl font-semibold">Awaiting Crew</h1>
       <p className="mb-6 text-sm text-slate-600">
         Approved bookings ready for crew assignment. Open one to pick crew with live availability and
