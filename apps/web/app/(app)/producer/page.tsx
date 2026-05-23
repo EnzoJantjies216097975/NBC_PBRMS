@@ -3,30 +3,55 @@ import { LOCATION_TYPE_LABELS, type BookingStatus, type LocationType } from '@nb
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { StatusBadge } from '@/components/StatusBadge';
+import { PeriodTabs } from '@/components/PeriodTabs';
 import { fmtDateTimeRange } from '@/lib/format';
+import { parseView, periodRange, shiftPeriod } from '@/lib/period';
+import { todayIso } from '@/lib/schedule';
 
-export default async function ProducerHome() {
+export default async function ProducerHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string; date?: string }>;
+}) {
   const { userId } = await requireRole(['producer', 'executive_producer', 'admin']);
+  const sp = await searchParams;
+  const view = parseView(sp.view, 'all');
+  const date = sp.date ?? todayIso();
+  const range = periodRange(view, date);
   const supabase = await createClient();
 
-  const { data: bookings } = await supabase
+  let query = supabase
     .from('bookings')
     .select('id, title, status, location_type, venue, call_date, call_time, end_time, ep_feedback')
-    .eq('producer_id', userId)
-    .order('call_date', { ascending: true });
+    .eq('producer_id', userId);
+  if (range.start && range.end) {
+    query = query.gte('call_date', range.start).lte('call_date', range.end);
+  }
+  const { data: bookings } = await query.order('call_date', { ascending: true });
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">My Productions</h1>
         <Link href="/producer/new" className="btn-primary">
           + New Booking
         </Link>
       </div>
 
+      <PeriodTabs
+        basePath="/producer"
+        view={view}
+        date={date}
+        rangeLabel={range.label}
+        prevDate={shiftPeriod(view, date, -1)}
+        nextDate={shiftPeriod(view, date, 1)}
+      />
+
       {(!bookings || bookings.length === 0) && (
         <div className="card text-sm text-slate-600">
-          No bookings yet. Create your first one with <strong>New Booking</strong>.
+          {view === 'all'
+            ? 'No bookings yet. Create your first one with New Booking.'
+            : 'No productions in this period.'}
         </div>
       )}
 

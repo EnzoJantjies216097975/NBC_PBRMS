@@ -3,17 +3,32 @@ import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { fmtDateTimeRange } from '@/lib/format';
 import { ScheduleRealtime } from '@/components/ScheduleRealtime';
+import { PeriodTabs } from '@/components/PeriodTabs';
+import { parseView, periodRange, shiftPeriod } from '@/lib/period';
+import { todayIso } from '@/lib/schedule';
 
-export default async function OperatorHome() {
+export default async function OperatorHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string; date?: string }>;
+}) {
   const { userId } = await requireRole(['operator', 'admin']);
+  const sp = await searchParams;
+  const view = parseView(sp.view, 'week');
+  const date = sp.date ?? todayIso();
+  const range = periodRange(view, date);
   const supabase = await createClient();
 
-  const { data: crew } = await supabase
+  let query = supabase
     .from('booking_crew')
     .select(
-      'id, role_label, status, needs_car_booking, booking:bookings(id, title, status, location_type, venue, call_date, call_time, end_time)',
+      'id, role_label, status, needs_car_booking, booking:bookings!inner(id, title, status, location_type, venue, call_date, call_time, end_time)',
     )
     .eq('profile_id', userId);
+  if (range.start && range.end) {
+    query = query.gte('booking.call_date', range.start).lte('booking.call_date', range.end);
+  }
+  const { data: crew } = await query;
 
   const rows = (crew ?? [])
     .map((c) => ({ ...c, booking: Array.isArray(c.booking) ? c.booking[0] : c.booking }))
@@ -24,10 +39,21 @@ export default async function OperatorHome() {
     <div className="mx-auto max-w-4xl">
       <ScheduleRealtime />
       <h1 className="mb-1 text-2xl font-semibold">My Schedule</h1>
-      <p className="mb-6 text-sm text-slate-600">Productions you are assigned to.</p>
+      <p className="mb-4 text-sm text-slate-600">Productions you are assigned to.</p>
+
+      <PeriodTabs
+        basePath="/operator"
+        view={view}
+        date={date}
+        rangeLabel={range.label}
+        prevDate={shiftPeriod(view, date, -1)}
+        nextDate={shiftPeriod(view, date, 1)}
+      />
 
       {rows.length === 0 && (
-        <div className="card text-sm text-slate-600">You have no assigned productions yet.</div>
+        <div className="card text-sm text-slate-600">
+          {view === 'all' ? 'You have no assigned productions yet.' : 'Nothing in this period.'}
+        </div>
       )}
 
       <div className="space-y-3">
