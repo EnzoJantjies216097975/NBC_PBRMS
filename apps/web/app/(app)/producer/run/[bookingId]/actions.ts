@@ -163,3 +163,58 @@ export async function endProduction(formData: FormData) {
   revalidatePath(back(bookingId));
   redirect(back(bookingId));
 }
+
+export async function cancelProduction(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  const bookingId = String(formData.get('booking_id') ?? '');
+  const reason = String(formData.get('cancel_reason') ?? '').trim();
+  if (!bookingId) redirect('/producer');
+
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('id, title, executive_producer_id')
+    .eq('id', bookingId)
+    .single();
+
+  await supabase
+    .from('bookings')
+    .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancelled_reason: reason || null })
+    .eq('id', bookingId);
+
+  // Make sure the crew (and Booking Officer + EP) know NOT to report.
+  const { data: crew } = await supabase.from('booking_crew').select('profile_id').eq('booking_id', bookingId);
+  const { data: officers } = await supabase.from('profiles').select('id').eq('role', 'booking_officer');
+
+  const recipients = new Set<string>();
+  for (const c of crew ?? []) recipients.add(c.profile_id);
+  for (const o of officers ?? []) recipients.add(o.id);
+  if (booking?.executive_producer_id) recipients.add(booking.executive_producer_id);
+
+  await notify(
+    supabase,
+    [...recipients].map((rid) => ({
+      recipient_id: rid,
+      type: 'booking_cancelled',
+      title: `Cancelled: ${booking?.title ?? 'production'}`,
+      body: reason
+        ? `Cancelled by the producer — ${reason}. Please do not report.`
+        : 'Cancelled by the producer. Please do not report.',
+      booking_id: bookingId,
+    })),
+  );
+
+  await supabase.from('audit_log').insert({
+    booking_id: bookingId,
+    actor_id: user.id,
+    action: 'cancelled',
+    detail: { reason: reason || null },
+  });
+
+  revalidatePath(back(bookingId));
+  redirect('/producer');
+}

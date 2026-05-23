@@ -11,7 +11,7 @@ export default async function OperatorHome() {
   const { data: crew } = await supabase
     .from('booking_crew')
     .select(
-      'id, role_label, status, needs_car_booking, booking:bookings(id, title, location_type, venue, call_date, call_time, end_time)',
+      'id, role_label, status, needs_car_booking, booking:bookings(id, title, status, location_type, venue, call_date, call_time, end_time)',
     )
     .eq('profile_id', userId);
 
@@ -32,10 +32,15 @@ export default async function OperatorHome() {
 
       <div className="space-y-3">
         {rows.map((c) => (
-          <div key={c.id} className="card">
+          <div key={c.id} className={`card ${c.booking!.status === 'cancelled' ? 'opacity-60' : ''}`}>
             <div className="flex items-center gap-2">
               <h3 className="font-medium">{c.booking!.title}</h3>
-              {c.needs_car_booking && (
+              {c.booking!.status === 'cancelled' && (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                  Cancelled
+                </span>
+              )}
+              {c.needs_car_booking && c.booking!.status !== 'cancelled' && (
                 <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
                   🚗 vehicle booked
                 </span>

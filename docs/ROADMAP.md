@@ -51,9 +51,11 @@ layer modules onto the same data model.
 - ✅ Operator **overtime view** computed daily from the logs (weekday 8h / Sat 5h / Sun all-OT) with a
   **printable Annexure-B sheet** (print CSS + `PrintButton`, shell hidden via `no-print`).
 - ✅ Operator **production reports** with severity + an in-page severity help guide.
+- ✅ Producer **cancel-with-notify** (run page): cancels a confirmed/in-progress booking and notifies
+  the whole crew ("do not report") + Booking Officer + EP — the ghost-cancellation pain point.
+  Cancelled productions still show (greyed, badged) on the operator's schedule.
 - ⏳ 1-hour-before reminders (needs the scheduled-jobs layer).
-- ⏳ Stand-in logging; explicit ghost-booking / location-shoot abuse reports (attendance + start/end
-  logging already capture the underlying data).
+- ⏳ Stand-in logging (the `booking_crew.stand_in_for` column exists; needs a run-page picker).
 
 ## Phase 5 — Storeroom, transport & APP ✅
 

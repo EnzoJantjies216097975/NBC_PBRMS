@@ -5,7 +5,7 @@ import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { StatusBadge } from '@/components/StatusBadge';
 import { fmtDateTimeRange, fmtTimestamp } from '@/lib/format';
-import { confirmPresent, endProduction, signalOperator, startProduction } from './actions';
+import { cancelProduction, confirmPresent, endProduction, signalOperator, startProduction } from './actions';
 
 function one<T>(v: T | T[] | null | undefined): T | undefined {
   return Array.isArray(v) ? v[0] : (v ?? undefined);
@@ -125,6 +125,26 @@ export default async function RunPage({ params }: { params: Promise<{ bookingId:
           );
         })}
       </div>
+
+      {(status === 'confirmed' || status === 'in_progress') && (
+        <section className="card mt-6 border-red-100">
+          <h2 className="font-medium">Cancel this production</h2>
+          <p className="mb-3 text-sm text-slate-600">
+            Cancelling notifies the whole crew (so nobody reports), plus the Booking Officer and your
+            Exec Producer.
+          </p>
+          <form action={cancelProduction} className="flex items-end gap-2">
+            <input type="hidden" name="booking_id" value={bookingId} />
+            <div className="flex-1">
+              <label className="label">Reason</label>
+              <input className="input" name="cancel_reason" placeholder="Why it's cancelled" />
+            </div>
+            <button className="btn-ghost !text-red-700" type="submit">
+              Cancel production
+            </button>
+          </form>
+        </section>
+      )}
     </div>
   );
 }

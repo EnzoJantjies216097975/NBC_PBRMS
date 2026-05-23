@@ -13,6 +13,7 @@ const ACTION_LABELS: Record<string, string> = {
   crew_assigned: 'Crew assigned',
   supervisor_changes_requested: 'Supervisor sent back',
   confirmed: 'Booking confirmed',
+  cancelled: 'Production cancelled',
   production_started: 'Production started',
   production_ended: 'Production ended',
   app_booked: 'APP session booked',
