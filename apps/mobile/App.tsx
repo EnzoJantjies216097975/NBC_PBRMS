@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
 import { USER_ROLE_LABELS, fullName, type Profile } from '@nbc/shared';
 import { supabase } from './lib/supabase';
+import { registerForPush } from './lib/push';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -92,6 +93,7 @@ function Home() {
       if (!auth.user) return;
       const { data } = await supabase.from('profiles').select('*').eq('id', auth.user.id).maybeSingle();
       setProfile(data ?? null);
+      void registerForPush(auth.user.id);
     })();
   }, []);
 
