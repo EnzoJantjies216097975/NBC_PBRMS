@@ -17,7 +17,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:gen-types": "supabase gen types typescript --local > packages/shared/src/database.types.ts"
+    "db:gen-types": "node scripts/gen-types.cjs"
   },
   "devDependencies": {
     "prettier": "^3.3.3",
