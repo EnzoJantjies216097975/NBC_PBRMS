@@ -45,6 +45,10 @@ app.UseAuthorization();
 
 app.MapHealthEndpoints();
 app.MapMeEndpoints();
+app.MapOrgUnitEndpoints();
+app.MapBookingFormEndpoints();
+app.MapBookingQueryEndpoints();
+app.MapBookingTransitionEndpoints();
 
 if (SignIn.IsDevelopmentMode(app.Configuration))
     app.MapDevLoginEndpoints();

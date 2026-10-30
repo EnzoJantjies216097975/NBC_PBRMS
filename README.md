@@ -33,14 +33,39 @@ dotnet run --project src/PBRMS.Api
 ```
 
 On first start in Development the API creates the `PBRMS` database and adds sample
-people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` to try it:
+people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` to try it.
 
-- `GET /health`: is the API up, and can it reach the database?
-- `POST /auth/dev-login` with `{ "email": "supervisor@pbrms.test" }`: returns a token (Development only, no password)
-- `GET /me` with `Authorization: Bearer <token>`: your profile and roles
+| Endpoint | What it does |
+| --- | --- |
+| `GET /health` | Is the API up, and can it reach the database? |
+| `POST /auth/dev-login` | `{ "email": "producer@pbrms.test" }` returns a token (Development only, no password) |
+| `GET /me` | Your profile and roles |
+| `GET /org-units` | Departments and TV Ops divisions, for the booking form's pickers |
+| `POST /bookings` | Create a draft booking |
+| `PUT /bookings/{id}` | Edit your draft (also after it was sent back) |
+| `GET /bookings/{id}` | One booking with its crew positions and history |
+| `GET /bookings/mine` | Your bookings, as a producer |
+| `GET /bookings/queue` | Bookings waiting for you to approve or send back |
+| `POST /bookings/{id}/transition` | `{ "action": "Submit" \| "Approve" \| "SendBack" \| "Cancel", "note": "..." }` |
 
-Sample users: `producer@`, `pm@`, `ep@`, `supervisor@`, `booking@`, `operator@`,
-`admin@` and `management@pbrms.test`. `former.staff@pbrms.test` has left and is refused.
+Send every request except health and dev-login with `Authorization: Bearer <token>`.
+
+**Sample users** (all `@pbrms.test`):
+
+| Email | Role |
+| --- | --- |
+| `producer@` | Producer, News |
+| `pm@` | Production Manager, News |
+| `ep@` | Executive Producer, News |
+| `supervisor@` | Supervisor and Operator, Camera |
+| `supervisor.sound@` | Supervisor, Sound |
+| `operator@` | Operator, Sound |
+| `producer.sports@` | Producer, Sports |
+| `booking@`, `admin@`, `management@` | Booking Officer, Admin, Management (NBC-wide) |
+| `former.staff@` | Has left; refused |
+
+If you change `DevSeed.cs`, drop the development database to pick up the change:
+`dotnet ef database drop --project src/PBRMS.Data --startup-project src/PBRMS.Api`.
 
 ## Run the tests
 
@@ -48,7 +73,12 @@ Sample users: `producer@`, `pm@`, `ep@`, `supervisor@`, `booking@`, `operator@`,
 dotnet test
 ```
 
-The tests use an in-memory SQLite database, so they need no SQL Server.
+The tests run against SQL Server on this machine, in a database called `PBRMS_Tests`.
+It is created on the first run, then wiped and refilled at the start of each run.
+
+**If SQL Server is slow** (creating a database takes tens of seconds, or tests time
+out): add SQL Server's data folder and `sqlservr.exe` to your antivirus exclusions,
+as Microsoft recommends, and keep a few GB free on C:.
 
 ## Change the database
 

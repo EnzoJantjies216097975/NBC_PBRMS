@@ -2,58 +2,75 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using PBRMS.Data;
 
 namespace PBRMS.Tests;
 
 /// <summary>
-/// Runs the real API in memory for tests, with the sample people from DevSeed.
+/// Runs the real API in memory for tests, against a real SQL Server test database.
 ///
-/// The database is SQLite held in memory instead of SQL Server, so tests need no
-/// database installed and start clean every time. That is fine for sign-in and
-/// roles. Tests that depend on SQL Server behaviour (locking, concurrency) will need
-/// a real SQL Server test database later.
+/// There is one test database, PBRMS_Tests, kept between test runs. Creating a SQL
+/// Server database can take 40 seconds on a machine with antivirus scanning new files,
+/// so it is created only once (by the real migrations, on the first run). At the start
+/// of each run it is wiped and the sample people from DevSeed are added again, so every
+/// run starts from the same data.
+///
+/// Every API test class shares this one instance through the "API" collection, so
+/// they run one after another, not side by side. Tests should create the data they
+/// change (their own bookings, their own extra users) rather than change the sample
+/// people, so a test never depends on what an earlier test did.
 /// </summary>
-public sealed class TestApi : WebApplicationFactory<Program>
+public sealed class TestApi : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    // An in-memory SQLite database lives only while its connection is open, so keep one open for the whole test.
-    private readonly SqliteConnection connection = new("DataSource=:memory:");
+    // Never point this at the development database ("PBRMS"): every run wipes it.
+    // The timeouts are longer than the 15 s / 30 s defaults, so a busy development
+    // machine (low memory, antivirus scanning SQL Server's files) gives slow tests
+    // rather than failed ones.
+    private const string ConnectionString =
+        "Server=localhost;Database=PBRMS_Tests;Trusted_Connection=True;TrustServerCertificate=True;" +
+        "Connect Timeout=60;Command Timeout=120";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development"); // Development sign-in (/auth/dev-login)
-        builder.UseSetting("Database:PrepareOnStartup", "false"); // we create the database below instead
+        // Development: dev sign-in, and the database is created/migrated on start-up.
+        builder.UseEnvironment("Development");
+        builder.UseSetting("ConnectionStrings:Pbrms", ConnectionString);
+    }
 
-        builder.ConfigureServices(services =>
+    /// <summary>Runs once before the first test: start the API, then reset the data.</summary>
+    public async Task InitializeAsync()
+    {
+        await WithDatabaseAsync(async db =>
         {
-            // Swap SQL Server for SQLite. Both registrations EF made for SQL Server must go,
-            // or EF complains that two database providers are configured.
-            services.RemoveAll<DbContextOptions<PbrmsDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<PbrmsDbContext>>();
+            // Delete children before parents, so the foreign keys allow it.
+            // Add new tables here, in the same order, when the schema grows.
+            await db.BookingStatusChanges.ExecuteDeleteAsync();
+            await db.CrewSlots.ExecuteDeleteAsync();
+            await db.Bookings.ExecuteDeleteAsync();
+            await db.RoleAssignments.ExecuteDeleteAsync();
+            await db.Users.ExecuteDeleteAsync();
+            await db.OrgUnits.Where(u => u.ParentId != null).ExecuteDeleteAsync();
+            await db.OrgUnits.ExecuteDeleteAsync();
 
-            connection.Open();
-            services.AddDbContext<PbrmsDbContext>(options => options.UseSqlite(connection));
-
-            using var scope = services.BuildServiceProvider().CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<PbrmsDbContext>();
-            db.Database.EnsureCreated();
-            DevSeed.RunAsync(db).GetAwaiter().GetResult();
+            await DevSeed.RunAsync(db);
         });
     }
 
-    /// <summary>Changes data directly in the test database, e.g. to deactivate someone.</summary>
-    public async Task WithDatabaseAsync(Func<PbrmsDbContext, Task> change)
+    // Nothing extra to clean up: the data stays for the next run to wipe, which also
+    // leaves it there to look at if a test fails. The API itself shuts down when xUnit
+    // disposes this factory.
+    Task IAsyncLifetime.DisposeAsync() => Task.CompletedTask;
+
+    /// <summary>Reads or changes data directly in the test database, e.g. to add a user.</summary>
+    public async Task WithDatabaseAsync(Func<PbrmsDbContext, Task> work)
     {
         using var scope = Services.CreateScope();
-        await change(scope.ServiceProvider.GetRequiredService<PbrmsDbContext>());
+        await work(scope.ServiceProvider.GetRequiredService<PbrmsDbContext>());
     }
 
-    /// <summary>An HTTP client already signed in as the sample user with this email.</summary>
+    /// <summary>An HTTP client already signed in as the user with this email.</summary>
     public async Task<HttpClient> SignedInClientAsync(string email)
     {
         var client = CreateClient();
@@ -66,10 +83,8 @@ public sealed class TestApi : WebApplicationFactory<Program>
     }
 
     private record TokenResponse(string Token);
-
-    protected override void Dispose(bool disposing)
-    {
-        base.Dispose(disposing);
-        connection.Dispose();
-    }
 }
+
+/// <summary>Test classes marked [Collection("API")] share one <see cref="TestApi"/> and run one at a time.</summary>
+[CollectionDefinition("API")]
+public class ApiCollection : ICollectionFixture<TestApi>;

@@ -29,17 +29,22 @@ public static class DevSeed
         var sports = Unit("Sports", OrgUnitKind.ContentDepartment);
         var camera = Unit("Camera", OrgUnitKind.TvOpsDivision);
         var sound = Unit("Sound", OrgUnitKind.TvOpsDivision);
-        var tvOps = Unit("Booking Office", OrgUnitKind.TvOpsDivision);
-        db.OrgUnits.AddRange(news, sports, camera, sound, tvOps);
+        db.OrgUnits.AddRange(news, sports, camera, sound);
 
-        // One person per role. Sign in as any of them with POST /auth/dev-login.
+        // The News approval chain from producer to supervisors, plus people in other
+        // units to check that roles only reach their own unit.
+        // Sign in as any of them with POST /auth/dev-login.
         db.Users.AddRange(
             Person("Test", "Producer", "producer@pbrms.test", (Role.Producer, news)),
             Person("Test", "ProductionManager", "pm@pbrms.test", (Role.ProductionManager, news)),
-            Person("Test", "ExecutiveProducer", "ep@pbrms.test", (Role.ExecutiveProducer, sports)),
+            Person("Test", "ExecutiveProducer", "ep@pbrms.test", (Role.ExecutiveProducer, news)),
             Person("Test", "Supervisor", "supervisor@pbrms.test", (Role.Supervisor, camera), (Role.Operator, camera)),
-            Person("Test", "BookingOfficer", "booking@pbrms.test", (Role.BookingOfficer, tvOps)),
+            Person("Test", "SoundSupervisor", "supervisor.sound@pbrms.test", (Role.Supervisor, sound)),
             Person("Test", "Operator", "operator@pbrms.test", (Role.Operator, sound)),
+            Person("Test", "SportsProducer", "producer.sports@pbrms.test", (Role.Producer, sports)),
+
+            // NBC-wide roles: not tied to one unit.
+            Person("Test", "BookingOfficer", "booking@pbrms.test", (Role.BookingOfficer, null)),
             Person("Test", "Admin", "admin@pbrms.test", (Role.Admin, null)),
             Person("Test", "Management", "management@pbrms.test", (Role.Management, null)));
 

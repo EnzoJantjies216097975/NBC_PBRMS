@@ -18,13 +18,12 @@ namespace PBRMS.Tests;
 /// - roles come from the PBRMS database;
 /// - emails match whatever their capitalisation.
 /// </summary>
-public class SignInTests
+[Collection("API")]
+public class SignInTests(TestApi api)
 {
     [Fact]
     public async Task Health_is_open_to_everyone()
     {
-        using var api = new TestApi();
-
         var response = await api.CreateClient().GetAsync("/health");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -33,8 +32,6 @@ public class SignInTests
     [Fact]
     public async Task Me_without_signing_in_is_refused()
     {
-        using var api = new TestApi();
-
         var response = await api.CreateClient().GetAsync("/me");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -43,7 +40,6 @@ public class SignInTests
     [Fact]
     public async Task Me_returns_the_signed_in_users_profile_and_roles()
     {
-        using var api = new TestApi();
         var client = await api.SignedInClientAsync("supervisor@pbrms.test");
 
         var me = await client.GetFromJsonAsync<MeResponse>("/me", JsonOptions);
@@ -57,8 +53,6 @@ public class SignInTests
     [Fact]
     public async Task Email_matches_whatever_its_capitals_and_spaces()
     {
-        using var api = new TestApi();
-
         var response = await api.CreateClient().PostAsJsonAsync("/auth/dev-login", new { email = "  Producer@PBRMS.test " });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -67,8 +61,6 @@ public class SignInTests
     [Fact]
     public async Task Dev_login_refuses_an_email_that_is_not_a_PBRMS_user()
     {
-        using var api = new TestApi();
-
         var response = await api.CreateClient().PostAsJsonAsync("/auth/dev-login", new { email = "stranger@pbrms.test" });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -77,8 +69,6 @@ public class SignInTests
     [Fact]
     public async Task Dev_login_refuses_someone_who_has_left()
     {
-        using var api = new TestApi();
-
         var response = await api.CreateClient().PostAsJsonAsync("/auth/dev-login", new { email = DevSeed.FormerStaffEmail });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -89,7 +79,6 @@ public class SignInTests
     {
         // Stands in for a real NBC Microsoft account that has no PBRMS user:
         // the token itself is fine, but the API must still refuse it.
-        using var api = new TestApi();
         var client = api.CreateClient();
         var token = api.Services.GetRequiredService<DevTokens>().IssueFor("someone.else@pbrms.test");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -102,12 +91,17 @@ public class SignInTests
     [Fact]
     public async Task Someone_deactivated_after_signing_in_is_refused_on_their_next_request()
     {
-        using var api = new TestApi();
-        var client = await api.SignedInClientAsync("operator@pbrms.test");
+        // Uses a new user of its own, so the sample operator stays active for other tests.
+        var email = $"leaving.{Guid.NewGuid():N}@pbrms.test";
+        await api.WithDatabaseAsync(async db =>
+        {
+            db.Users.Add(new User { FirstName = "Leaving", Surname = "Soon", WorkEmail = email, Roles = [new() { Role = Role.Operator }] });
+            await db.SaveChangesAsync();
+        });
+        var client = await api.SignedInClientAsync(email);
 
         await api.WithDatabaseAsync(db =>
-            db.Users.Where(u => u.WorkEmail == "operator@pbrms.test")
-                .ExecuteUpdateAsync(u => u.SetProperty(x => x.IsActive, false)));
+            db.Users.Where(u => u.WorkEmail == email).ExecuteUpdateAsync(u => u.SetProperty(x => x.IsActive, false)));
         var response = await client.GetAsync("/me");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
