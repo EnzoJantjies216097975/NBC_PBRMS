@@ -69,6 +69,7 @@ app.MapNotificationEndpoints();
 app.MapOffRosterEndpoints();
 app.MapConfirmationEndpoints();
 app.MapDailyRosterEndpoints();
+app.MapAppSessionEndpoints();
 
 if (SignIn.IsDevelopmentMode(app.Configuration))
     app.MapDevLoginEndpoints();

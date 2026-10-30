@@ -274,3 +274,63 @@ Content-Type: application/json
 ### The A4 printout. REST Client shows the file details; use "Save Response" to keep the PDF.
 GET {{api}}/daily-roster/{{day}}/pdf
 Authorization: Bearer {{bookingOfficer.response.body.token}}
+
+### ---- APP bookings ----
+
+### Sign in as an editor
+# @name editor
+POST {{api}}/auth/dev-login
+Content-Type: application/json
+
+{ "email": "editor@pbrms.test" }
+
+### Sign in as the APP operator
+# @name appOperator
+POST {{api}}/auth/dev-login
+Content-Type: application/json
+
+{ "email": "app@pbrms.test" }
+
+### The APP operators to choose from
+# @name appOperators
+GET {{api}}/app-operators
+Authorization: Bearer {{editor.response.body.token}}
+
+### A1. The editor books the APP operator directly. Status: Requested.
+# @name session
+POST {{api}}/app-sessions
+Authorization: Bearer {{editor.response.body.token}}
+Content-Type: application/json
+
+{
+  "operatorId": "{{appOperators.response.body.$[0].id}}",
+  "production": "Evening News voice-over",
+  "startsAt": "{{day}}T14:00:00+02:00",
+  "endsAt": "{{day}}T15:30:00+02:00"
+}
+
+### A2. The APP operator confirms. Status: Confirmed. Or send A3 instead.
+POST {{api}}/app-sessions/{{session.response.body.id}}/confirm
+Authorization: Bearer {{appOperator.response.body.token}}
+
+### A3. Or they can't do that time, so it goes to the Booking Officer. Status: Unavailable.
+POST {{api}}/app-sessions/{{session.response.body.id}}/unavailable
+Authorization: Bearer {{appOperator.response.body.token}}
+Content-Type: application/json
+
+{ "note": "On a production at that time" }
+
+### A4. The Booking Officer suggests a suitable time. Status: TimeSuggested.
+POST {{api}}/app-sessions/{{session.response.body.id}}/suggest-time
+Authorization: Bearer {{bookingOfficer.response.body.token}}
+Content-Type: application/json
+
+{ "startsAt": "{{day}}T16:00:00+02:00", "endsAt": "{{day}}T17:30:00+02:00" }
+
+### A5. The editor accepts it. Status: Confirmed.
+POST {{api}}/app-sessions/{{session.response.body.id}}/accept
+Authorization: Bearer {{editor.response.body.token}}
+
+### A6. Report: which productions, editors and producers used APP.
+GET {{api}}/reports/app-usage?from={{day}}&to={{day}}
+Authorization: Bearer {{manager.response.body.token}}

@@ -16,6 +16,12 @@ public enum Role
     Admin,
     Management,
 
+    /// <summary>An editor (production officer). Books APP operators directly, like a producer.</summary>
+    Editor,
+
+    /// <summary>An audio post-production operator. Confirms the APP bookings made with them.</summary>
+    AppOperator,
+
     /// <summary>Runs TV Operations. Told about, and can see, work outside the roster.</summary>
     TvOperationsManager
 }

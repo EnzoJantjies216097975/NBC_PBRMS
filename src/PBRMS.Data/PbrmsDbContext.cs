@@ -25,6 +25,7 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<OffRosterWork> OffRosterWork => Set<OffRosterWork>();
     public DbSet<DailyRoster> DailyRosters => Set<DailyRoster>();
+    public DbSet<AppSession> AppSessions => Set<AppSession>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -214,6 +215,19 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
             crew.Property(c => c.Division).HasMaxLength(80);
             crew.Property(c => c.Name).HasMaxLength(170);
             crew.HasOne<DailyRosterLine>().WithMany(l => l.Crew).HasForeignKey(c => c.DailyRosterLineId);
+        });
+
+        modelBuilder.Entity<AppSession>(session =>
+        {
+            session.Property(s => s.Production).HasMaxLength(160);
+            session.Property(s => s.Note).HasMaxLength(500);
+            session.Property(s => s.RowVersion).IsRowVersion();
+            session.HasOne(s => s.Requester).WithMany().HasForeignKey(s => s.RequesterId).OnDelete(DeleteBehavior.Restrict);
+            session.HasOne(s => s.Operator).WithMany().HasForeignKey(s => s.OperatorId).OnDelete(DeleteBehavior.Restrict);
+            session.HasOne(s => s.SuggestedBy).WithMany().HasForeignKey(s => s.SuggestedById).OnDelete(DeleteBehavior.Restrict);
+
+            // For the clash check.
+            session.HasIndex(s => new { s.OperatorId, s.StartsAt });
         });
     }
 }

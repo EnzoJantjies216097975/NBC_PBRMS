@@ -77,6 +77,7 @@ Send every request except health and dev-login with `Authorization: Bearer <toke
 | `producer.sports@` | Producer, Sports |
 | `booking@`, `admin@`, `management@` | Booking Officer, Admin, Management (NBC-wide) |
 | `tvops.manager@` | TV Operations Manager |
+| `editor@`, `app@` | Editor, APP operator (Sound) |
 | `former.staff@` | Has left; refused |
 
 If you change `DevSeed.cs`, drop the development database to pick up the change:
@@ -154,6 +155,20 @@ undecided, and can decide it.
 
 **PDF library:** PDFsharp/MigraDoc is pinned at exactly 6.2.4, the last MIT version. From 6.5.0 it
 is AGPL-3.0. Don't upgrade it without reading the licence; a test fails if the version changes.
+
+## APP bookings
+
+APP operators work directly with producers and editors, so these skip the approval chain (BR-12):
+
+1. A producer or editor books an operator: `POST /app-sessions`. `GET /app-operators` lists them.
+2. The APP operator agrees: `POST /app-sessions/{id}/confirm`. They can't confirm over a production or another session.
+3. Or they can't do that time: `POST /app-sessions/{id}/unavailable`. It goes to the Booking Officer (`GET /app-sessions/queue`).
+4. The Booking Officer suggests a time the operator is free: `POST /app-sessions/{id}/suggest-time`.
+5. The producer or editor takes it with `POST /app-sessions/{id}/accept`, or calls it off with `/cancel`.
+
+A confirmed session counts as the operator being busy, and shows on the daily roster.
+`GET /reports/app-usage?from=&to=` shows supervisors, the TV Operations Manager and Admin which
+productions, editors and producers used APP.
 
 ## Run the tests
 

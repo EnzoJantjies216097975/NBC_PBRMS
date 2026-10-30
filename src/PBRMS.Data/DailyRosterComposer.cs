@@ -30,6 +30,7 @@ public class DailyRosterComposer(PbrmsDbContext db, ClashChecker clashChecker)
 
         var lines = BookingLines(confirmed);
         lines.AddRange(await RosteredLinesAsync(date, confirmed));
+        lines.AddRange(await AppLinesAsync(dayStart, dayEnd));
 
         var saved = await db.DailyRosters.AsNoTracking()
             .Include(r => r.Lines).ThenInclude(l => l.Crew)
@@ -132,6 +133,17 @@ public class DailyRosterComposer(PbrmsDbContext db, ClashChecker clashChecker)
             .Select(g => new DailyLine(null, null, g.Key.Area, g.Key.Start, g.Key.End, g.Key.Title, null, g.Select(r => r.Member).ToList(), Rostered: true))
             .ToList();
     }
+
+    /// <summary>A row per confirmed APP session, so the sheet shows the operator is taken.</summary>
+    private async Task<List<DailyLine>> AppLinesAsync(DateTimeOffset dayStart, DateTimeOffset dayEnd) =>
+        await db.AppSessions.AsNoTracking()
+            .Where(s => s.Status == AppSessionStatus.Confirmed && s.StartsAt < dayEnd && dayStart < s.EndsAt)
+            .Select(s => new DailyLine(
+                null, null, "APP", s.StartsAt, s.EndsAt, s.Production,
+                s.Requester.FirstName + " " + s.Requester.Surname,
+                new List<DailyCrewMember> { new("APP", s.Operator.FirstName + " " + s.Operator.Surname) },
+                false))
+            .ToListAsync();
 
     /// <summary>Lays the Booking Officer's changes over the generated rows.</summary>
     private static List<DailyLine> ApplyEdits(List<DailyLine> lines, DailyRoster? saved)

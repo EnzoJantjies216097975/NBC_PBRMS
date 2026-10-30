@@ -58,9 +58,13 @@ public static class DevSeed
     /// <summary>People added after the first sample set, so they reach existing development databases too.</summary>
     private static async Task AddOfficePeopleAsync(PbrmsDbContext db)
     {
+        var sound = await db.OrgUnits.FirstOrDefaultAsync(u => u.Name == "Sound");
+
         User[] people =
         [
-            Person("Test", "TvOperationsManager", "tvops.manager@pbrms.test", (Role.TvOperationsManager, null))
+            Person("Test", "TvOperationsManager", "tvops.manager@pbrms.test", (Role.TvOperationsManager, null)),
+            Person("Test", "Editor", "editor@pbrms.test", (Role.Editor, null)),
+            Person("Test", "AppOperator", "app@pbrms.test", (Role.AppOperator, sound))
         ];
 
         foreach (var person in people)

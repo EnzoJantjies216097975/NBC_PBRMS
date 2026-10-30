@@ -12,7 +12,7 @@ public class ClashChecker(PbrmsDbContext db)
 {
     /// <summary>
     /// Why this operator can't work the given period, or needs a warning first: other
-    /// productions they are on, and what the published roster says.
+    /// productions and APP sessions they are on, and what the published roster says.
     /// </summary>
     /// <param name="forBooking">
     /// The booking the period is for, if there is one. It tells us where the work is, whether
@@ -22,6 +22,7 @@ public class ClashChecker(PbrmsDbContext db)
     public async Task<List<Clash>> ForOperatorAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to, Booking? forBooking = null)
     {
         var clashes = await OtherProductionsAsync(operatorId, from, to, forBooking);
+        clashes.AddRange(await AppSessionsAsync(operatorId, from, to));
         clashes.AddRange(await RosterClashesAsync(operatorId, from, to, forBooking));
         return clashes;
     }
@@ -64,6 +65,17 @@ public class ClashChecker(PbrmsDbContext db)
             })
             .ToList();
     }
+
+    /// <summary>Confirmed APP sessions: the operator is busy then, like on a production.</summary>
+    private async Task<List<Clash>> AppSessionsAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to) =>
+        await db.AppSessions
+            .AsNoTracking()
+            .Where(s => s.OperatorId == operatorId
+                        && s.Status == AppSessionStatus.Confirmed
+                        // Same as ClashRules.Overlaps, written out so SQL Server can run it.
+                        && s.StartsAt < to && from < s.EndsAt)
+            .Select(s => new Clash(ClashKind.Operator, s.Operator.FirstName + " " + s.Operator.Surname, null, "APP session: " + s.Production, s.StartsAt, s.EndsAt, null))
+            .ToListAsync();
 
     /// <summary>
     /// Studios are filled first. When crewing an outside production, this lists studio

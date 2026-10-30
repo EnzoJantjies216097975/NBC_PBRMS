@@ -24,6 +24,70 @@ namespace PBRMS.Data.Migrations
 
             modelBuilder.HasSequence<int>("ProductionNumbers");
 
+            modelBuilder.Entity("PBRMS.Domain.AppSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Production")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<Guid>("RequesterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid?>("SuggestedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("SuggestedEndsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("SuggestedStartsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequesterId");
+
+                    b.HasIndex("SuggestedById");
+
+                    b.HasIndex("OperatorId", "StartsAt");
+
+                    b.ToTable("AppSessions");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.Booking", b =>
                 {
                     b.Property<Guid>("Id")
@@ -642,6 +706,32 @@ namespace PBRMS.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.AppSession", b =>
+                {
+                    b.HasOne("PBRMS.Domain.User", "Operator")
+                        .WithMany()
+                        .HasForeignKey("OperatorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PBRMS.Domain.User", "Requester")
+                        .WithMany()
+                        .HasForeignKey("RequesterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PBRMS.Domain.User", "SuggestedBy")
+                        .WithMany()
+                        .HasForeignKey("SuggestedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Operator");
+
+                    b.Navigation("Requester");
+
+                    b.Navigation("SuggestedBy");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.Booking", b =>
