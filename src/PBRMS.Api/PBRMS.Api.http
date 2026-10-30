@@ -1,0 +1,19 @@
+# Try the API by hand: start it with "dotnet run --project src/PBRMS.Api",
+# then click "Send Request" above each block (VS Code needs the REST Client extension;
+# Visual Studio and Rider support .http files out of the box).
+
+@api = http://localhost:5188
+
+### Is the API up, and can it reach the database?
+GET {{api}}/health
+
+### Sign in as a sample user (Development only). Other emails are in src/PBRMS.Data/DevSeed.cs.
+# @name login
+POST {{api}}/auth/dev-login
+Content-Type: application/json
+
+{ "email": "supervisor@pbrms.test" }
+
+### Who am I? Uses the token from the sign-in above.
+GET {{api}}/me
+Authorization: Bearer {{login.response.body.token}}
