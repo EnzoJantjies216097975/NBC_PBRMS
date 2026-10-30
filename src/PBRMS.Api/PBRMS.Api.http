@@ -6,7 +6,7 @@
 #    The answer opens on the right.
 #
 # To go through it again, change @day to a date you haven't used. Or leave it the
-# same to see a clash at step 8: the answer names the production in the way.
+# same to see a clash at step 7: the answer names the production in the way.
 
 @api = http://localhost:5188
 @day = 2026-12-01
@@ -145,7 +145,7 @@ Authorization: Bearer {{producer.response.body.token}}
 
 ### ---- Things that must be refused ----
 
-### The producer can't approve bookings. Answer: 403, or 409 once it's past review.
+### Approving a booking that is already confirmed. Answer: 409, with the reason.
 POST {{api}}/bookings/{{booking.response.body.id}}/transition
 Authorization: Bearer {{producer.response.body.token}}
 Content-Type: application/json
