@@ -7,9 +7,8 @@ using PBRMS.Domain;
 namespace PBRMS.Api.Endpoints;
 
 /// <summary>
-/// PUT /bookings/{id}/crew: supervisors put operators on their division's crew slots.
-/// When the last slot is filled the booking moves on to the Booking Officer by itself,
-/// so it reaches them only when every division has assigned crew (FR-BOOK-06).
+/// PUT /bookings/{id}/crew: the Booking Officer books studio crew, and supervisors decide who
+/// goes outside (see <see cref="BookingWorkflow.MayStaff"/>).
 ///
 /// A clash (on leave, on another studio production) stops the assignment. A warning (a
 /// day off, outside their shift, another studio) goes back to the person assigning, who
@@ -28,7 +27,7 @@ public static class BookingCrewEndpoints
 
     private static async Task<IResult> AssignCrew(Guid id, CrewRequest request, ClaimsPrincipal principal, [AsParameters] BookingServices services)
     {
-        var (db, clashChecker, notifier, offRosterLog, studioPrecedence) = services;
+        var (db, clashChecker, notifier, offRosterLog, studioPrecedence, crewProgress) = services;
 
         // Everything happens in one transaction, so the clash locks are held until the save is committed.
         await using var transaction = await db.Database.BeginTransactionAsync();
@@ -62,9 +61,10 @@ public static class BookingCrewEndpoints
         if (warnings.Count > 0 && !request.AcknowledgeWarnings)
             return Problems.Warnings("Check these before going ahead.", warnings.Select(w => w.Clash).Distinct().ToList());
 
-        // 3. Apply the changes, and pass the booking on if that filled the last slot.
+        // 3. Apply the changes. Filling the last slot moves the booking on (see CrewProgress).
+        var wasConfirmed = booking.Status == BookingStatus.Confirmed;
         var replaced = ApplyChanges(changes, caller.UserId);
-        PassOnIfFull(booking, caller.UserId);
+        await crewProgress.MoveOnIfFullAsync(booking, caller.UserId);
 
         // 4. Act on the warnings that were acknowledged: take operators off outside
         //    productions, log work outside the roster, and tell the people affected.
@@ -79,7 +79,7 @@ public static class BookingCrewEndpoints
             await TellAboutWarningAsync(notifier, booking, slot, operatorId, warning, caller.UserId);
         }
 
-        if (booking.Status == BookingStatus.Confirmed)
+        if (wasConfirmed)
             TellAboutCrewChange(notifier, booking, replaced, newOperators.Select(c => c.OperatorId!.Value));
 
         try
@@ -110,8 +110,8 @@ public static class BookingCrewEndpoints
             var slot = booking.CrewSlots.FirstOrDefault(s => s.Id == change.SlotId);
             if (slot is null)
                 return (changes, Problems.Invalid("slotId", "That crew position isn't on this booking."));
-            if (!BookingWorkflow.MayStaff(slot.DivisionId, caller.Roles))
-                return (changes, Problems.Forbidden("You can only assign crew in your own division."));
+            if (!BookingWorkflow.MayStaff(booking, slot.DivisionId, caller.Roles, DateTimeOffset.UtcNow))
+                return (changes, Problems.Forbidden("The Booking Officer books studio crew. Outside crew is decided by the division's supervisor, and by the Booking Officer once the daily roster is due."));
             if (slot.Current?.OperatorId == change.OperatorId)
                 continue;
 
@@ -168,23 +168,6 @@ public static class BookingCrewEndpoints
         return replaced;
     }
 
-    /// <summary>Once every slot is filled, the booking moves on to the Booking Officer.</summary>
-    private static void PassOnIfFull(Booking booking, Guid actorId)
-    {
-        if (booking.Status != BookingStatus.CrewAssignment || booking.CrewSlots.Any(s => s.Current is null))
-            return;
-
-        booking.History.Add(new BookingStatusChange
-        {
-            FromStatus = BookingStatus.CrewAssignment,
-            ToStatus = BookingStatus.Finalisation,
-            ActorId = actorId,
-            Note = "All crew positions filled",
-            At = DateTimeOffset.UtcNow
-        });
-        booking.Status = BookingStatus.Finalisation;
-    }
-
     /// <summary>
     /// After someone went ahead despite a warning. Work outside the roster tells the
     /// operator, the division's supervisors, the TV Operations Manager and the Booking
@@ -218,8 +201,9 @@ public static class BookingCrewEndpoints
         }
         else if (warning.Kind == ClashKind.StudioNeedsCrew)
         {
+            // The Booking Officer decides studio crew, so it's theirs to know a studio is short.
             notifier.Send(
-                supervisors.Where(person => person != actorId),
+                await notifier.PeopleWithRoleAsync(Role.BookingOfficer),
                 $"{production} at {booking.Venue} was crewed while studio production #{warning.ProductionNo} {warning.Title} still needs {warning.Who}.",
                 booking.Id);
         }

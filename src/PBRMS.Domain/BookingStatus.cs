@@ -18,12 +18,12 @@ public enum BookingStatus
     EpReview,
 
     /// <summary>
-    /// With the supervisors and the Booking Officer at the same time, while crew is assigned.
-    /// Who leads depends on the venue: see <see cref="BookingWorkflow.CrewLead"/>.
+    /// Crew is being decided: by the Booking Officer for a studio production, and by the
+    /// supervisors of the divisions it needs for anything outside (see <see cref="BookingWorkflow.CrewLead"/>).
     /// </summary>
     CrewAssignment,
 
-    /// <summary>Waiting for the Booking Officer to settle studios and times and resolve clashes.</summary>
+    /// <summary>A studio production waiting for the Booking Officer to settle times, resolve clashes and confirm.</summary>
     Finalisation,
 
     /// <summary>Approved and crewed; producer, EP and crew have been told.</summary>

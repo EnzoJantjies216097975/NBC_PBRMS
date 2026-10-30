@@ -86,6 +86,14 @@ public static class RosterRules
         return null;
     }
 
+    /// <summary>
+    /// Do these shifts put someone in this studio during this period? That's who the roster
+    /// has already chosen for a studio production, so the crew can be filled automatically.
+    /// </summary>
+    public static bool IsRosteredTo(Venue studio, IEnumerable<ShiftDefinition> shifts, DateOnly day, DateTimeOffset from, DateTimeOffset to) =>
+        shifts.Any(s => s.Studio == studio
+                        && s.WindowsOn(day).Any(window => ClashRules.Overlaps(window.Start, window.End, from, to)));
+
     private static string Describe(IEnumerable<ShiftDefinition> shifts) =>
         string.Join(", ", shifts.Select(s => $"{s.Code}: {s.Label}"));
 }

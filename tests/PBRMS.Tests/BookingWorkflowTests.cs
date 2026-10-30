@@ -18,12 +18,19 @@ public class BookingWorkflowTests
 
     private static readonly Guid ProducerId = Guid.NewGuid();
 
-    /// <summary>A Drama booking that needs a Camera crew.</summary>
+    // A booking at 10h00 on Wednesday, so the crew deadline is 16h00 on Tuesday.
+    private static readonly DateTimeOffset Wednesday = new(2031, 3, 5, 10, 0, 0, NbcTime.Offset);
+    private static readonly DateTimeOffset BeforeDeadline = new(2031, 3, 4, 15, 59, 0, NbcTime.Offset);
+    private static readonly DateTimeOffset AtDeadline = new(2031, 3, 4, 16, 0, 0, NbcTime.Offset);
+
+    /// <summary>A Drama location shoot on Wednesday that needs a Camera crew.</summary>
     private static Booking DramaBooking(BookingStatus status) => new()
     {
         ProducerId = ProducerId,
         DepartmentId = Drama.Id,
         Status = status,
+        Venue = Venue.Location,
+        StartsAt = Wednesday,
         CrewSlots = [new CrewSlot { DivisionId = Camera.Id, PositionLabel = "Camera 1" }]
     };
 
@@ -33,7 +40,7 @@ public class BookingWorkflowTests
     {
         var booking = DramaBooking(status);
         var step = BookingWorkflow.FindStep(status, action)!;
-        return BookingWorkflow.MayTake(step, booking, userId, roles, OrgUnit.ChainUp(booking.DepartmentId, AllUnits));
+        return BookingWorkflow.MayTake(step, booking, userId, roles, OrgUnit.ChainUp(booking.DepartmentId, AllUnits), BeforeDeadline);
     }
 
     [Fact]
@@ -73,6 +80,29 @@ public class BookingWorkflowTests
     {
         Assert.Equal(BookingStatus.Draft, BookingWorkflow.FindStep(BookingStatus.EpReview, BookingAction.SendBack)!.To);
         Assert.Equal(BookingStatus.EpReview, BookingWorkflow.FindStep(BookingStatus.CrewAssignment, BookingAction.SendBack)!.To);
+    }
+
+    [Fact]
+    public void Supervisors_decide_outside_crew_and_the_booking_officer_decides_studio_crew()
+    {
+        var shoot = DramaBooking(BookingStatus.CrewAssignment);
+        var studio = DramaBooking(BookingStatus.CrewAssignment);
+        studio.Venue = Venue.Studio1;
+
+        Assert.True(BookingWorkflow.MayStaff(shoot, Camera.Id, Holds(Role.Supervisor, Camera), BeforeDeadline));
+        Assert.False(BookingWorkflow.MayStaff(shoot, Camera.Id, Holds(Role.Supervisor, Sound), BeforeDeadline));
+        Assert.False(BookingWorkflow.MayStaff(shoot, Camera.Id, Holds(Role.BookingOfficer, null), BeforeDeadline));
+
+        Assert.True(BookingWorkflow.MayStaff(studio, Camera.Id, Holds(Role.BookingOfficer, null), BeforeDeadline));
+        Assert.False(BookingWorkflow.MayStaff(studio, Camera.Id, Holds(Role.Supervisor, Camera), BeforeDeadline));
+    }
+
+    [Fact]
+    public void The_booking_officer_can_decide_outside_crew_once_the_daily_roster_is_due()
+    {
+        var shoot = DramaBooking(BookingStatus.CrewAssignment);
+
+        Assert.True(BookingWorkflow.MayStaff(shoot, Camera.Id, Holds(Role.BookingOfficer, null), AtDeadline));
     }
 
     [Fact]

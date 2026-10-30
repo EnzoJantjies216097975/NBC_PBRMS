@@ -68,8 +68,8 @@ public static class BookingQueryEndpoints
         return inReview
             .Where(b => BookingWorkflow.Steps.Any(step =>
                 step.From == b.Status &&
-                BookingWorkflow.MayTake(step, b, caller.UserId, caller.Roles, OrgUnit.ChainUp(b.DepartmentId, units))))
-            // Studios are filled first, so studio productions come top of the queue.
+                BookingWorkflow.MayTake(step, b, caller.UserId, caller.Roles, OrgUnit.ChainUp(b.DepartmentId, units), DateTimeOffset.UtcNow)))
+            // Studios are filled first, so studio productions come top of the Booking Officer's queue.
             .OrderByDescending(b => ClashRules.IsStudio(b.Venue)).ThenBy(b => b.StartsAt)
             .Select(BookingResponse.From)
             .ToList();

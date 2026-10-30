@@ -95,9 +95,7 @@ public class BookingTests(TestApi api)
     [Fact]
     public async Task Only_a_supervisor_of_a_division_in_the_crew_list_can_send_back_at_crew_assignment()
     {
-        var booking = await CreateNewsBookingAsync(api); // needs Camera crew only
-        await TransitionAsync(api, "producer@pbrms.test", booking.Id, new(BookingAction.Submit, null, null, null));
-        await TransitionAsync(api, "ep@pbrms.test", booking.Id, new(BookingAction.Approve, null, null, null));
+        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Location, "Camera"); // needs Camera crew only
 
         var sound = await api.SignedInClientAsync("supervisor.sound@pbrms.test");
         var refused = await sound.PostAsJsonAsync($"/bookings/{booking.Id}/transition", new TransitionRequest(BookingAction.SendBack, "No sound crew free", null, null), Json);
@@ -165,37 +163,35 @@ public class BookingTests(TestApi api)
     }
 
     [Fact]
-    public async Task After_the_EP_a_booking_is_with_the_supervisors_and_the_booking_officer_at_the_same_time()
-    {
-        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
-
-        Assert.DoesNotContain(await QueueAsync(api, "ep@pbrms.test"), b => b.Id == booking.Id);
-        Assert.Contains(await QueueAsync(api, "supervisor@pbrms.test"), b => b.Id == booking.Id);
-        Assert.Contains(await QueueAsync(api, "booking@pbrms.test"), b => b.Id == booking.Id);
-    }
-
-    [Fact]
-    public async Task The_booking_officer_leads_on_a_studio_production_and_is_asked_to_assign_the_crew()
+    public async Task A_studio_production_goes_only_to_the_booking_officer()
     {
         var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
 
         Assert.Equal(Role.BookingOfficer, booking.CrewLead);
-        Assert.Contains(await api.NotificationsAsync("booking@pbrms.test"), n => n.BookingId == booking.Id && n.Text.Contains("Please assign the crew"));
-        Assert.Contains(await api.NotificationsAsync("supervisor@pbrms.test"), n => n.BookingId == booking.Id && n.Text.Contains("the Booking Officer will lead"));
+        Assert.Contains(await QueueAsync(api, "booking@pbrms.test"), b => b.Id == booking.Id);
+        Assert.Contains(await api.NotificationsAsync("booking@pbrms.test"), n => n.BookingId == booking.Id && n.Text.Contains("needs crew"));
+
+        Assert.DoesNotContain(await QueueAsync(api, "supervisor@pbrms.test"), b => b.Id == booking.Id);
+        Assert.DoesNotContain(await api.NotificationsAsync("supervisor@pbrms.test"), n => n.BookingId == booking.Id);
     }
 
     [Fact]
-    public async Task Supervisors_lead_on_a_production_outside_and_are_asked_to_assign_the_crew()
+    public async Task An_outside_production_goes_only_to_the_supervisors_of_the_divisions_it_needs()
     {
-        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Location, "Camera");
+        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Location, "Sound");
 
         Assert.Equal(Role.Supervisor, booking.CrewLead);
-        Assert.Contains(await api.NotificationsAsync("supervisor@pbrms.test"), n => n.BookingId == booking.Id && n.Text.Contains("Please assign the crew"));
-        Assert.Contains(await api.NotificationsAsync("booking@pbrms.test"), n => n.BookingId == booking.Id && n.Text.Contains("the supervisors will lead"));
+        Assert.Contains(await QueueAsync(api, "supervisor.sound@pbrms.test"), b => b.Id == booking.Id);
+        Assert.Contains(await api.NotificationsAsync("supervisor.sound@pbrms.test"), n => n.BookingId == booking.Id && n.Text.Contains("needs crew"));
+
+        // The Camera supervisor has nobody on it, and the Booking Officer doesn't need to see it.
+        Assert.DoesNotContain(await QueueAsync(api, "supervisor@pbrms.test"), b => b.Id == booking.Id);
+        Assert.DoesNotContain(await QueueAsync(api, "booking@pbrms.test"), b => b.Id == booking.Id);
+        Assert.DoesNotContain(await api.NotificationsAsync("booking@pbrms.test"), n => n.BookingId == booking.Id);
     }
 
     [Fact]
-    public async Task The_booking_officer_can_also_send_a_booking_back_from_crew_assignment()
+    public async Task The_booking_officer_can_send_a_studio_booking_back_from_crew_assignment()
     {
         var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
 

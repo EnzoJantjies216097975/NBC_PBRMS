@@ -173,7 +173,7 @@ namespace PBRMS.Data.Migrations
                     b.Property<DateTimeOffset>("AssignedAt")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<Guid>("AssignedById")
+                    b.Property<Guid?>("AssignedById")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CrewSlotId")
@@ -577,8 +577,7 @@ namespace PBRMS.Data.Migrations
                     b.HasOne("PBRMS.Domain.User", "AssignedBy")
                         .WithMany()
                         .HasForeignKey("AssignedById")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PBRMS.Domain.CrewSlot", "CrewSlot")
                         .WithMany("Assignments")

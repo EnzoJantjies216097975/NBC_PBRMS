@@ -24,10 +24,10 @@ public class CrewTests(TestApi api)
         var (start, cameraOp, soundOp) = (NewDay(), await api.NewOperatorAsync("Camera"), await api.NewOperatorAsync("Sound"));
         var booking = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera", "Sound");
 
-        var afterCamera = await api.AssignOkAsync("supervisor@pbrms.test", booking, "Camera", cameraOp);
+        var afterCamera = await api.AssignOkAsync(booking, "Camera", cameraOp);
         Assert.Equal(BookingStatus.CrewAssignment, afterCamera.Status); // Sound still to come
 
-        var afterSound = await api.AssignOkAsync("supervisor.sound@pbrms.test", booking, "Sound", soundOp);
+        var afterSound = await api.AssignOkAsync(booking, "Sound", soundOp);
         Assert.Equal(BookingStatus.Finalisation, afterSound.Status); // last slot filled: on to the Booking Officer
         Assert.All(afterSound.CrewSlots, s => Assert.Null(s.OperatorPhone)); // no phone numbers until the crew is final
 
@@ -40,7 +40,7 @@ public class CrewTests(TestApi api)
     [Fact]
     public async Task A_supervisor_can_only_assign_in_their_own_division()
     {
-        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
+        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Location, "Camera");
 
         var response = await api.AssignAsync("supervisor.sound@pbrms.test", booking, "Camera", await api.NewOperatorAsync("Camera"));
 
@@ -52,7 +52,7 @@ public class CrewTests(TestApi api)
     {
         var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
 
-        var response = await api.AssignAsync("supervisor@pbrms.test", booking, "Camera", await api.NewOperatorAsync("Sound"));
+        var response = await api.AssignAsync(booking, "Camera", await api.NewOperatorAsync("Sound"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -63,10 +63,10 @@ public class CrewTests(TestApi api)
         var start = NewDay();
         var op = await api.NewOperatorAsync("Camera");
         var first = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
-        await api.AssignOkAsync("supervisor@pbrms.test", first, "Camera", op);
+        await api.AssignOkAsync(first, "Camera", op);
         var second = await api.AtCrewStageAsync(start.AddHours(1), Venue.Studio2, "Camera");
 
-        var response = await api.AssignAsync("supervisor@pbrms.test", second, "Camera", op);
+        var response = await api.AssignAsync(second, "Camera", op);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Contains(first.ProductionNo.ToString(), await response.Content.ReadAsStringAsync());
@@ -78,10 +78,10 @@ public class CrewTests(TestApi api)
         var start = NewDay();
         var op = await api.NewOperatorAsync("Camera");
         var morning = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
-        await api.AssignOkAsync("supervisor@pbrms.test", morning, "Camera", op);
+        await api.AssignOkAsync(morning, "Camera", op);
         var afternoon = await api.AtCrewStageAsync(start.AddHours(2), Venue.Studio1, "Camera"); // starts as the first ends
 
-        var response = await api.AssignAsync("supervisor@pbrms.test", afternoon, "Camera", op);
+        var response = await api.AssignAsync(afternoon, "Camera", op);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -95,14 +95,14 @@ public class CrewTests(TestApi api)
         {
             var start = NewDay();
             var op = await api.NewOperatorAsync("Camera");
-            var first = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
-            var second = await api.AtCrewStageAsync(start, Venue.Studio2, "Camera");
+            var first = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
+            var second = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
             var supervisor = await api.SignedInClientAsync("supervisor@pbrms.test");
-            var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
+            var otherSupervisor = await api.SignedInClientAsync("supervisor@pbrms.test");
 
             var responses = await Task.WhenAll(
                 supervisor.PutAsJsonAsync($"/bookings/{first.Id}/crew", new CrewRequest([new(first.CrewSlots[0].Id, op)]), Json),
-                bookingOfficer.PutAsJsonAsync($"/bookings/{second.Id}/crew", new CrewRequest([new(second.CrewSlots[0].Id, op)]), Json));
+                otherSupervisor.PutAsJsonAsync($"/bookings/{second.Id}/crew", new CrewRequest([new(second.CrewSlots[0].Id, op)]), Json));
 
             Assert.Equal(
                 new[] { HttpStatusCode.OK, HttpStatusCode.Conflict },
@@ -116,11 +116,11 @@ public class CrewTests(TestApi api)
         var start = NewDay();
         var op = await api.NewOperatorAsync("Camera");
         var cancelled = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
-        await api.AssignOkAsync("supervisor@pbrms.test", cancelled, "Camera", op);
+        await api.AssignOkAsync(cancelled, "Camera", op);
         await api.TransitionAsync("booking@pbrms.test", cancelled.Id, BookingAction.Cancel, "Event called off");
         var other = await api.AtCrewStageAsync(start, Venue.Studio2, "Camera");
 
-        var response = await api.AssignAsync("supervisor@pbrms.test", other, "Camera", op);
+        var response = await api.AssignAsync(other, "Camera", op);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -130,9 +130,9 @@ public class CrewTests(TestApi api)
     {
         var (first, second) = (await api.NewOperatorAsync("Camera"), await api.NewOperatorAsync("Camera"));
         var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
-        await api.AssignOkAsync("supervisor@pbrms.test", booking, "Camera", first);
+        await api.AssignOkAsync(booking, "Camera", first);
 
-        var changed = await api.AssignOkAsync("supervisor@pbrms.test", booking, "Camera", second);
+        var changed = await api.AssignOkAsync(booking, "Camera", second);
 
         Assert.Equal(second, changed.CrewSlots[0].OperatorId);
         await api.WithDatabaseAsync(async db =>
@@ -168,16 +168,91 @@ public class CrewTests(TestApi api)
     }
 
     [Fact]
-    public async Task A_booking_at_a_location_never_clashes_over_its_venue()
+    public async Task Bookings_at_a_location_never_clash_over_their_venue_and_are_confirmed_when_the_supervisor_decides()
     {
         var start = NewDay();
-        var first = await api.AtFinalisationAsync(start, Venue.Location);
-        await api.TransitionAsync("booking@pbrms.test", first.Id, BookingAction.Approve);
-        var second = await api.AtFinalisationAsync(start, Venue.Location);
+        var first = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
+        var second = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
 
-        var confirmed = await api.TransitionAsync("booking@pbrms.test", second.Id, BookingAction.Approve);
+        var firstAfter = await api.AssignOkAsync(first, "Camera", await api.NewOperatorAsync("Camera"));
+        var secondAfter = await api.AssignOkAsync(second, "Camera", await api.NewOperatorAsync("Camera"));
 
-        Assert.Equal(BookingStatus.Confirmed, confirmed.Status);
+        // Supervisors phone their operators first, so their decision is the confirmation.
+        Assert.Equal(BookingStatus.Confirmed, firstAfter.Status);
+        Assert.Equal(BookingStatus.Confirmed, secondAfter.Status);
+    }
+
+    [Fact]
+    public async Task An_outside_production_is_confirmed_only_when_every_division_has_decided()
+    {
+        var (cameraOp, soundOp) = (await api.NewOperatorAsync("Camera"), await api.NewOperatorAsync("Sound"));
+        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Location, "Camera", "Sound");
+
+        var afterCamera = await api.AssignOkAsync(booking, "Camera", cameraOp);
+        Assert.Equal(BookingStatus.CrewAssignment, afterCamera.Status);
+        Assert.DoesNotContain(await api.NotificationsAsync(OperatorEmail(cameraOp)), n => n.BookingId == booking.Id);
+
+        var afterSound = await api.AssignOkAsync(booking, "Sound", soundOp);
+        Assert.Equal(BookingStatus.Confirmed, afterSound.Status);
+
+        // Only now are the operators told.
+        Assert.Contains(await api.NotificationsAsync(OperatorEmail(cameraOp)), n => n.BookingId == booking.Id && n.Text.Contains("is confirmed"));
+    }
+
+    [Fact]
+    public async Task The_booking_officer_cant_decide_outside_crew_before_the_daily_roster_is_due()
+    {
+        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Location, "Camera");
+
+        var response = await api.AssignAsync("booking@pbrms.test", booking, "Camera", await api.NewOperatorAsync("Camera"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Undecided_outside_crew_goes_to_the_booking_officer_once_the_daily_roster_is_due()
+    {
+        // Starting in two hours, so the deadline (16h00 the day before) has passed.
+        var booking = await api.AtCrewStageAsync(DateTimeOffset.UtcNow.AddHours(2), Venue.Location, "Camera");
+        var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
+
+        var queue = await bookingOfficer.GetFromJsonAsync<List<BookingResponse>>("/bookings/queue", Json);
+        Assert.Contains(queue!, b => b.Id == booking.Id);
+
+        var decided = await api.AssignAsync("booking@pbrms.test", booking, "Camera", await api.NewOperatorAsync("Camera"));
+        Assert.Equal(HttpStatusCode.OK, decided.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_supervisor_cant_book_studio_crew()
+    {
+        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
+
+        var response = await api.AssignAsync("supervisor@pbrms.test", booking, "Camera", await api.NewOperatorAsync("Camera"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_sees_who_decided_each_position_and_who_confirmed_each_booking()
+    {
+        var start = NewDay();
+        var studio = await api.AtFinalisationAsync(start, Venue.Studio1);
+        await api.TransitionAsync("booking@pbrms.test", studio.Id, BookingAction.Approve);
+        var outside = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
+        await api.AssignOkAsync(outside, "Camera", await api.NewOperatorAsync("Camera"));
+
+        var admin = await api.SignedInClientAsync("admin@pbrms.test");
+        var day = $"{start:yyyy-MM-dd}";
+        var rows = await admin.GetFromJsonAsync<List<ConfirmationEndpoints.ConfirmationResponse>>($"/reports/confirmations?from={day}&to={day}", Json);
+
+        var studioRow = rows!.Single(r => r.ProductionNo == studio.ProductionNo);
+        Assert.Equal((Role.BookingOfficer, Role.BookingOfficer), (studioRow.DecidedByRole!.Value, studioRow.ConfirmedByRole!.Value));
+        var outsideRow = rows!.Single(r => r.ProductionNo == outside.ProductionNo);
+        Assert.Equal((Role.Supervisor, Role.Supervisor), (outsideRow.DecidedByRole!.Value, outsideRow.ConfirmedByRole!.Value));
+
+        var supervisor = await api.SignedInClientAsync("supervisor@pbrms.test");
+        Assert.Equal(HttpStatusCode.Forbidden, (await supervisor.GetAsync($"/reports/confirmations?from={day}&to={day}")).StatusCode);
     }
 
     [Fact]
@@ -186,9 +261,9 @@ public class CrewTests(TestApi api)
         var start = NewDay();
         var op = await api.NewOperatorAsync("Camera");
         var other = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
-        await api.AssignOkAsync("supervisor@pbrms.test", other, "Camera", op);
+        await api.AssignOkAsync(other, "Camera", op);
         var later = await api.AtCrewStageAsync(start.AddHours(5), Venue.Studio2, "Camera");
-        await api.AssignOkAsync("supervisor@pbrms.test", later, "Camera", op);
+        await api.AssignOkAsync(later, "Camera", op);
         var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
 
         // Moving is allowed, because a busy day may take several moves to sort out...
@@ -234,7 +309,7 @@ public class CrewTests(TestApi api)
         var start = NewDay();
         var op = await api.NewOperatorAsync("Camera");
         var booking = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
-        await api.AssignOkAsync("supervisor@pbrms.test", booking, "Camera", op);
+        await api.AssignOkAsync(booking, "Camera", op);
         var supervisor = await api.SignedInClientAsync("supervisor@pbrms.test");
         var units = await api.UnitsAsync();
 

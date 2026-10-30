@@ -75,11 +75,11 @@ public static class TestSteps
         return await api.TransitionAsync("ep@pbrms.test", booking.Id, BookingAction.Approve);
     }
 
-    /// <summary>A booking with its one Camera slot filled, waiting for the Booking Officer.</summary>
+    /// <summary>A studio booking with its one Camera slot filled, waiting for the Booking Officer to confirm.</summary>
     public static async Task<BookingResponse> AtFinalisationAsync(this TestApi api, DateTimeOffset start, Venue venue)
     {
         var booking = await api.AtCrewStageAsync(start, venue, "Camera");
-        return await api.AssignOkAsync("supervisor@pbrms.test", booking, "Camera", await api.NewOperatorAsync("Camera"));
+        return await api.AssignOkAsync(booking, "Camera", await api.NewOperatorAsync("Camera"));
     }
 
     public static async Task<HttpResponseMessage> AssignAsync(this TestApi api, string email, BookingResponse booking, string division, Guid operatorId, bool acknowledge = false)
@@ -88,6 +88,17 @@ public static class TestSteps
         var slot = booking.CrewSlots.Single(s => s.Division == division);
         return await client.PutAsJsonAsync($"/bookings/{booking.Id}/crew", new CrewRequest([new(slot.Id, operatorId)], acknowledge), Json);
     }
+
+    /// <summary>Whoever decides this booking's crew: the Booking Officer for a studio, the Camera or Sound supervisor outside.</summary>
+    private static string Decider(BookingResponse booking, string division) =>
+        booking.CrewLead == Role.BookingOfficer || ClashRules.IsStudio(booking.Venue) ? "booking@pbrms.test"
+        : division == "Sound" ? "supervisor.sound@pbrms.test" : "supervisor@pbrms.test";
+
+    public static Task<HttpResponseMessage> AssignAsync(this TestApi api, BookingResponse booking, string division, Guid operatorId, bool acknowledge = false) =>
+        api.AssignAsync(Decider(booking, division), booking, division, operatorId, acknowledge);
+
+    public static Task<BookingResponse> AssignOkAsync(this TestApi api, BookingResponse booking, string division, Guid operatorId) =>
+        api.AssignOkAsync(Decider(booking, division), booking, division, operatorId);
 
     /// <summary>The sign-in email of an operator made by <see cref="NewOperatorAsync"/>.</summary>
     public static string OperatorEmail(Guid operatorId) => $"{operatorId:N}@pbrms.test";

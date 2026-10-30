@@ -50,9 +50,8 @@ public class StudioPrecedence(PbrmsDbContext db, Notifier notifier)
             studio.Id);
 
         var supervisors = await notifier.PeopleWithRoleAsync(Role.Supervisor, taken.CrewSlot.DivisionId);
-        var bookingOfficers = await notifier.PeopleWithRoleAsync(Role.BookingOfficer);
         notifier.Send(
-            supervisors.Concat(bookingOfficers).Append(outside.ProducerId).Where(person => person != actorId),
+            supervisors.Append(outside.ProducerId).Where(person => person != actorId),
             $"{operatorName} has been taken off {production} for studio production #{studio.ProductionNo}. {taken.CrewSlot.PositionLabel} needs someone else.",
             outside.Id);
     }

@@ -25,7 +25,7 @@ public class ProductionDayTests(TestApi api)
     {
         var op = await api.NewOperatorAsync("Camera");
         var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
-        await api.AssignOkAsync(Supervisor, booking, "Camera", op);
+        await api.AssignOkAsync(booking, "Camera", op);
 
         await api.TransitionAsync(BookingOfficer, booking.Id, BookingAction.Approve);
 
@@ -39,7 +39,7 @@ public class ProductionDayTests(TestApi api)
         var (first, second) = (await api.NewOperatorAsync("Camera"), await api.NewOperatorAsync("Camera"));
         var booking = await ConfirmedAsync(first);
 
-        var changed = await api.AssignOkAsync(Supervisor, booking, "Camera", second);
+        var changed = await api.AssignOkAsync(booking, "Camera", second);
 
         Assert.Equal(second, changed.CrewSlots[0].OperatorId);
         Assert.Equal(BookingStatus.Confirmed, changed.Status);
@@ -52,9 +52,9 @@ public class ProductionDayTests(TestApi api)
     public async Task A_confirmed_position_cant_be_left_empty()
     {
         var booking = await ConfirmedAsync(await api.NewOperatorAsync("Camera"));
-        var supervisor = await api.SignedInClientAsync(Supervisor);
+        var bookingOfficer = await api.SignedInClientAsync(BookingOfficer);
 
-        var response = await supervisor.PutAsJsonAsync($"/bookings/{booking.Id}/crew", new CrewRequest([new(booking.CrewSlots[0].Id, null)]), Json);
+        var response = await bookingOfficer.PutAsJsonAsync($"/bookings/{booking.Id}/crew", new CrewRequest([new(booking.CrewSlots[0].Id, null)]), Json);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -133,15 +133,14 @@ public class ProductionDayTests(TestApi api)
         var start = NewDay();
         var op = await api.NewOperatorAsync("Camera");
         var outside = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
-        await api.AssignOkAsync(Supervisor, outside, "Camera", op);
-        await api.TransitionAsync(BookingOfficer, outside.Id, BookingAction.Approve);
+        await api.AssignOkAsync(outside, "Camera", op);
         var studio = await api.AtCrewStageAsync(start.AddHours(1), Venue.Studio1, "Camera");
 
         // First a warning, and nothing changes.
-        var warned = await api.AssignAsync(BookingOfficer, studio, "Camera", op);
+        var warned = await api.AssignAsync(studio, "Camera", op);
         Assert.Contains("needsAcknowledgement", await warned.Content.ReadAsStringAsync());
 
-        var taken = await api.AssignAsync(BookingOfficer, studio, "Camera", op, acknowledge: true);
+        var taken = await api.AssignAsync(studio, "Camera", op, acknowledge: true);
         Assert.Equal(HttpStatusCode.OK, taken.StatusCode);
 
         // The outside production goes back for crew, even though it was confirmed.
@@ -162,12 +161,11 @@ public class ProductionDayTests(TestApi api)
         var start = NewDay();
         var op = await api.NewOperatorAsync("Camera");
         var outside = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
-        await api.AssignOkAsync(Supervisor, outside, "Camera", op);
-        await api.TransitionAsync(BookingOfficer, outside.Id, BookingAction.Approve);
+        await api.AssignOkAsync(outside, "Camera", op);
         await api.TransitionAsync(Producer, outside.Id, BookingAction.Start);
         var studio = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
 
-        var response = await api.AssignAsync(Supervisor, studio, "Camera", op, acknowledge: true);
+        var response = await api.AssignAsync(studio, "Camera", op, acknowledge: true);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -178,42 +176,29 @@ public class ProductionDayTests(TestApi api)
         var start = NewDay();
         var op = await api.NewOperatorAsync("Camera");
         var studio = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
-        await api.AssignOkAsync(Supervisor, studio, "Camera", op);
+        await api.AssignOkAsync(studio, "Camera", op);
         var outside = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
 
-        var response = await api.AssignAsync(Supervisor, outside, "Camera", op, acknowledge: true);
+        var response = await api.AssignAsync(outside, "Camera", op, acknowledge: true);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]
-    public async Task Crewing_an_outside_production_while_a_studio_is_short_warns_and_alerts_the_supervisors()
+    public async Task Crewing_an_outside_production_while_a_studio_is_short_warns_and_tells_the_booking_officer()
     {
         var start = NewDay();
         var studio = await api.AtCrewStageAsync(start, Venue.Studio2, "Camera");
         var outside = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
         var op = await api.NewOperatorAsync("Camera");
 
-        var warned = await api.AssignAsync(BookingOfficer, outside, "Camera", op);
+        var warned = await api.AssignAsync(outside, "Camera", op);
         var body = await warned.Content.ReadAsStringAsync();
         Assert.Contains("needsAcknowledgement", body);
         Assert.Contains(studio.ProductionNo.ToString(), body);
 
-        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(BookingOfficer, outside, "Camera", op, acknowledge: true)).StatusCode);
-        Assert.Contains(await api.NotificationsAsync(Supervisor), n => n.BookingId == outside.Id && n.Text.Contains("still needs"));
-    }
-
-    [Fact]
-    public async Task Studios_come_first_in_a_supervisors_queue()
-    {
-        var start = NewDay();
-        var outsideSooner = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
-        var studioLater = await api.AtCrewStageAsync(start.AddHours(3), Venue.Studio4, "Camera");
-        var client = await api.SignedInClientAsync(Supervisor);
-
-        var queue = (await client.GetFromJsonAsync<List<BookingResponse>>("/bookings/queue", Json))!.Select(b => b.Id).ToList();
-
-        Assert.True(queue.IndexOf(studioLater.Id) < queue.IndexOf(outsideSooner.Id));
+        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(outside, "Camera", op, acknowledge: true)).StatusCode);
+        Assert.Contains(await api.NotificationsAsync(BookingOfficer), n => n.BookingId == outside.Id && n.Text.Contains("still needs"));
     }
 
     [Fact]
@@ -236,7 +221,7 @@ public class ProductionDayTests(TestApi api)
     private async Task<BookingResponse> ConfirmedAsync(Guid operatorId)
     {
         var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio3, "Camera");
-        await api.AssignOkAsync(Supervisor, booking, "Camera", operatorId);
+        await api.AssignOkAsync(booking, "Camera", operatorId);
         return await api.TransitionAsync(BookingOfficer, booking.Id, BookingAction.Approve);
     }
 

@@ -95,16 +95,9 @@ public class ClashChecker(PbrmsDbContext db)
         var days = RosterRules.DaysCovered(from, to);
         var (firstDay, lastDay) = (days[0], days[^1]);
 
-        var entries = await db.RosterEntries
+        var entries = await EntriesInForce()
             .AsNoTracking()
-            .Where(e => e.OperatorId == operatorId
-                        && e.Date >= firstDay && e.Date <= lastDay
-                        && e.Roster.Status == RosterStatus.Published
-                        // Only the newest published version of that month is in force.
-                        && !db.MonthlyRosters.Any(newer => newer.DivisionId == e.Roster.DivisionId
-                                                           && newer.Month == e.Roster.Month
-                                                           && newer.Status == RosterStatus.Published
-                                                           && newer.Version > e.Roster.Version))
+            .Where(e => e.OperatorId == operatorId && e.Date >= firstDay && e.Date <= lastDay)
             .Select(e => new
             {
                 e.Date,
@@ -200,8 +193,16 @@ public class ClashChecker(PbrmsDbContext db)
         return clashes.Distinct().ToList();
     }
 
+    /// <summary>Cells of the rosters in force: published, and only the newest published version of that month.</summary>
+    public IQueryable<RosterEntry> EntriesInForce() =>
+        db.RosterEntries.Where(e => e.Roster.Status == RosterStatus.Published
+                                    && !db.MonthlyRosters.Any(newer => newer.DivisionId == e.Roster.DivisionId
+                                                                       && newer.Month == e.Roster.Month
+                                                                       && newer.Status == RosterStatus.Published
+                                                                       && newer.Version > e.Roster.Version));
+
     /// <summary>The definitions of the codes in a cell. A code no longer on the legend is left out.</summary>
-    private static List<ShiftDefinition> ShiftsIn(string cell, IEnumerable<ShiftDefinition> legend)
+    public static List<ShiftDefinition> ShiftsIn(string cell, IEnumerable<ShiftDefinition> legend)
     {
         var codes = RosterRules.SplitCodes(cell);
         return legend.Where(s => codes.Contains(s.Code)).ToList();

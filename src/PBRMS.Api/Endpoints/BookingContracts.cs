@@ -49,7 +49,7 @@ public record CrewChange(Guid SlotId, Guid? OperatorId);
 /// <summary>The Booking Officer's changes to where and when a booking happens.</summary>
 public record ScheduleRequest(Venue Venue, string? VenueText, DateTimeOffset CallAt, DateTimeOffset StartsAt, DateTimeOffset EndsAt);
 
-/// <summary>A booking as the apps see it, with its crew positions and history. CrewLead says who leads while crew is being assigned.</summary>
+/// <summary>A booking as the apps see it, with its crew positions and history. CrewLead says who is deciding while crew is being assigned.</summary>
 public record BookingResponse(
     Guid Id,
     int ProductionNo,
@@ -141,4 +141,5 @@ public record BookingServices(
     ClashChecker ClashChecker,
     Notifier Notifier,
     OffRosterLog OffRosterLog,
-    StudioPrecedence StudioPrecedence);
+    StudioPrecedence StudioPrecedence,
+    CrewProgress CrewProgress);

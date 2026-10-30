@@ -38,4 +38,16 @@ public class Notifier(PbrmsDbContext db)
             .Distinct()
             .ToListAsync();
     }
+
+    /// <summary>A booking is confirmed: the producer, the EP and every assigned operator are told (App Flow Document, step 6).</summary>
+    public async Task TellConfirmedAsync(Booking booking, ISet<Guid> departmentChain)
+    {
+        var eps = await PeopleWithRoleAsync(Role.ExecutiveProducer, departmentChain);
+        var crew = booking.CrewSlots.Select(s => s.Current!.OperatorId);
+
+        Send(
+            crew.Concat(eps).Append(booking.ProducerId),
+            $"#{booking.ProductionNo} {booking.Title} is confirmed for {NbcTime.Text(booking.StartsAt)}.",
+            booking.Id);
+    }
 }

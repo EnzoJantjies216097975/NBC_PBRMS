@@ -62,11 +62,12 @@ public static class BookingTransitionEndpoints
         });
         booking.Status = newStatus;
 
+        // The EP approved: studio crew comes from the roster, outside crew goes to the supervisors.
         if (newStatus == BookingStatus.CrewAssignment)
-            await TellCrewNeededAsync(booking, services.Notifier);
+            await services.CrewProgress.OpenAsync(booking, caller.UserId);
 
         if (newStatus == BookingStatus.Confirmed)
-            await TellConfirmedAsync(booking, departmentChain, services.Notifier);
+            await services.Notifier.TellConfirmedAsync(booking, departmentChain);
 
         try
         {
@@ -98,7 +99,7 @@ public static class BookingTransitionEndpoints
         var step = BookingWorkflow.FindStep(booking.Status, request.Action);
         if (step is null)
             return (booking.Status, Problems.Conflict($"A booking in {booking.Status} can't take the action '{request.Action}'."));
-        if (!BookingWorkflow.MayTake(step, booking, caller.UserId, caller.Roles, departmentChain))
+        if (!BookingWorkflow.MayTake(step, booking, caller.UserId, caller.Roles, departmentChain, DateTimeOffset.UtcNow))
             return (booking.Status, Problems.Forbidden($"At this stage only {Describe(step.ActedBy)} can do this."));
 
         // EP approval sends the booking to the supervisors of the divisions in its crew
@@ -162,43 +163,12 @@ public static class BookingTransitionEndpoints
         }
     }
 
-    /// <summary>
-    /// The EP approved: the booking goes to the supervisors and the Booking Officer at the
-    /// same time. Whoever leads (see <see cref="BookingWorkflow.CrewLead"/>) is asked to
-    /// assign the crew, and the others are told who is doing it.
-    /// </summary>
-    private static async Task TellCrewNeededAsync(Booking booking, Notifier notifier)
-    {
-        var supervisors = await notifier.PeopleWithRoleAsync(Role.Supervisor, booking.CrewSlots.Select(s => s.DivisionId));
-        var bookingOfficers = await notifier.PeopleWithRoleAsync(Role.BookingOfficer);
-        var studioProduction = BookingWorkflow.CrewLead(booking.Venue) == Role.BookingOfficer;
-
-        var (leads, others) = studioProduction ? (bookingOfficers, supervisors) : (supervisors, bookingOfficers);
-        var leadName = studioProduction ? "the Booking Officer" : "the supervisors";
-        var production = $"#{booking.ProductionNo} {booking.Title} ({NbcTime.Text(booking.StartsAt)}, {booking.Venue})";
-
-        notifier.Send(leads, $"{production} has been approved. Please assign the crew.", booking.Id);
-        notifier.Send(others, $"{production} has been approved. {leadName} will lead on the crew.", booking.Id);
-    }
-
-    /// <summary>Confirmed: the producer, the EP and every assigned operator are told (App Flow Document, step 6).</summary>
-    private static async Task TellConfirmedAsync(Booking booking, HashSet<Guid> departmentChain, Notifier notifier)
-    {
-        var eps = await notifier.PeopleWithRoleAsync(Role.ExecutiveProducer, departmentChain);
-        var crew = booking.CrewSlots.Select(s => s.Current!.OperatorId);
-
-        notifier.Send(
-            crew.Concat(eps).Append(booking.ProducerId),
-            $"#{booking.ProductionNo} {booking.Title} is confirmed for {NbcTime.Text(booking.StartsAt)}.",
-            booking.Id);
-    }
-
     /// <summary>Who acts at a stage, in words for the error message.</summary>
     private static string Describe(Role role) => role switch
     {
         Role.Producer => "the booking's producer",
         Role.ExecutiveProducer => "the department's Executive Producer",
-        Role.Supervisor => "a supervisor of one of the booking's crew divisions or the Booking Officer",
+        Role.Supervisor => "whoever is deciding this booking's crew",
         Role.BookingOfficer => "the Booking Officer",
         _ => $"a {role}"
     };

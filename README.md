@@ -50,7 +50,7 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `GET /reports/off-roster-work?from=&to=` | Who was booked on a day off or outside their shift. The TV Operations Manager, Management and Admin see everyone; supervisors see their own divisions. Add `divisionId=` for one division. |
 | `GET /notifications` | Your newest notifications |
 | `POST /notifications/{id}/read` | Mark one as read |
-| `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. Supervisors and the Booking Officer. Filling the last slot moves the booking on to Finalisation. On a confirmed booking it replaces the operator. |
+| `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. The Booking Officer for studios, supervisors outside. On a confirmed booking it replaces the operator. |
 | `GET /bookings/{id}/clashes` | Everything the booking clashes with |
 | `PUT /bookings/{id}/schedule` | The Booking Officer moves a booking at Finalisation to another studio or time |
 | `GET /org-units/{id}/operators` | Active operators in a division, for the crew picker |
@@ -85,13 +85,20 @@ If you change `DevSeed.cs`, drop the development database to pick up the change:
 
 ## How a booking moves
 
-Producer → Executive Producer → crew assignment → Booking Officer confirms → production day.
+Producer → Executive Producer → crew → confirmed → production day. After the EP approves:
 
-After the EP approves, the booking goes to the supervisors and the Booking Officer at the
-same time, and both see it in their queues. The venue decides who leads on the crew:
-the Booking Officer for a studio production, the supervisors for anything outside. Either
-can assign crew. When every position is filled it moves on, and the Booking Officer
-confirms every booking.
+| | Studio production | Outside or trip |
+| --- | --- | --- |
+| Crew | Filled automatically from the published monthly roster. The Booking Officer books anyone still needed. | Decided by the supervisor of each division it needs. |
+| Who sees it | The Booking Officer | Only those supervisors |
+| Confirmed | By the Booking Officer | The moment the last supervisor decides, because they phone their operators first |
+| Operators told | When it's confirmed | When it's confirmed |
+
+If an outside production is still undecided when the daily roster is due (16h00 the day
+before), the Booking Officer can decide it too, and it appears in their queue.
+
+Admin can see who decided each position and who confirmed each booking at
+`GET /reports/confirmations?from=&to=`.
 
 ## What the roster does to crew assignments
 

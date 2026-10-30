@@ -39,14 +39,15 @@ public static class BookingWorkflow
     /// <summary>
     /// Every allowed move (Cancel is handled separately). A move that isn't listed
     /// isn't allowed.
-    /// Sending back: the EP sends it to the producer to fix (Draft); a
-    /// supervisor sends it back to the EP (App Flow Document, BR-07).
+    /// Sending back: the EP sends it to the producer to fix (Draft); whoever is crewing
+    /// it sends it back to the EP (App Flow Document, BR-07).
     /// </summary>
     /// <remarks>
-    /// Crew assignment → Finalisation isn't listed because nobody presses a button for
-    /// it: the booking moves by itself when the last crew slot is filled, so it reaches
-    /// the Booking Officer only when every division has assigned crew (FR-BOOK-06).
-    /// Finalisation → Confirmed also needs the clash check (TR-02); see the transition endpoint.
+    /// Leaving crew assignment isn't listed because nobody presses a button for it: when the
+    /// last crew slot is filled, a studio booking moves on to the Booking Officer to confirm,
+    /// and an outside booking is confirmed there and then, because the supervisors phone their
+    /// operators before deciding (see CrewProgress). Confirming also needs the clash check
+    /// (TR-02); see the transition endpoint.
     /// </remarks>
     public static readonly IReadOnlyList<Step> Steps =
     [
@@ -73,13 +74,6 @@ public static class BookingWorkflow
     public static readonly IReadOnlyList<Role> CancelledBy =
         [Role.ExecutiveProducer, Role.BookingOfficer, Role.Admin];
 
-    /// <summary>
-    /// Who leads on crewing a booking. After the EP approves it goes to the supervisors and
-    /// the Booking Officer at the same time, and either can assign crew, but one is responsible:
-    /// the Booking Officer for a studio production, the supervisors for anything outside.
-    /// </summary>
-    public static Role CrewLead(Venue venue) => ClashRules.IsStudio(venue) ? Role.BookingOfficer : Role.Supervisor;
-
     /// <summary>The step for doing this action in this status, or null if it isn't allowed then.</summary>
     public static Step? FindStep(BookingStatus from, BookingAction action) =>
         Steps.FirstOrDefault(s => s.From == from && s.Action == action);
@@ -95,18 +89,17 @@ public static class BookingWorkflow
     /// May this user take this step on this booking? Holding the role is not enough;
     /// it has to be for this booking:
     /// - Producer: only the booking's own producer.
-    /// - Supervisor: supervisor of a division named in the booking's crew slots, or the
-    ///   Booking Officer, because crew assignment goes to both at the same time.
+    /// - Supervisor: whoever may fill the booking's crew slots (see <see cref="MayStaff"/>).
     /// - Executive Producer: of the booking's department, or of a
     ///   department above it (e.g. Content Hub over its sub-departments).
     /// A role held NBC-wide (no unit) covers every booking.
     /// </summary>
     /// <param name="departmentChain">The booking's department and every unit above it (see <see cref="OrgUnit.ChainUp"/>).</param>
-    public static bool MayTake(Step step, Booking booking, Guid userId, IEnumerable<RoleAssignment> userRoles, ISet<Guid> departmentChain) =>
+    public static bool MayTake(Step step, Booking booking, Guid userId, IEnumerable<RoleAssignment> userRoles, ISet<Guid> departmentChain, DateTimeOffset now) =>
         step.ActedBy switch
         {
             Role.Producer => booking.ProducerId == userId,
-            Role.Supervisor => booking.CrewSlots.Any(s => MayStaff(s.DivisionId, userRoles)),
+            Role.Supervisor => booking.CrewSlots.Any(s => MayStaff(booking, s.DivisionId, userRoles, now)),
             _ => HoldsRoleIn(userRoles, step.ActedBy, departmentChain)
         };
 
@@ -116,13 +109,35 @@ public static class BookingWorkflow
         || CancelledBy.Any(role => HoldsRoleIn(userRoles, role, departmentChain));
 
     /// <summary>
-    /// May this user put operators on a slot of this division? The division's supervisor,
-    /// or the Booking Officer, who can adjust any crew (Backend Schema Document, PUT /bookings/{id}/crew).
+    /// Who decides the crew. The Booking Officer books people in the studios. Supervisors
+    /// decide who goes outside and on trips, each for their own division.
     /// </summary>
-    public static bool MayStaff(Guid divisionId, IEnumerable<RoleAssignment> userRoles)
+    public static Role CrewLead(Venue venue) => ClashRules.IsStudio(venue) ? Role.BookingOfficer : Role.Supervisor;
+
+    /// <summary>
+    /// The latest a supervisor has to crew an outside production: when the daily roster
+    /// for its day is built, at 16h00 the day before (TRD, "Daily roster generation").
+    /// </summary>
+    public static DateTimeOffset CrewDeadline(DateTimeOffset startsAt) =>
+        NbcTime.At(NbcTime.DateOf(startsAt).AddDays(-1), DailyRosterTime);
+
+    /// <summary>When tomorrow's daily roster is built (TRD, "Daily roster generation").</summary>
+    public static readonly TimeOnly DailyRosterTime = new(16, 0);
+
+    /// <summary>
+    /// May this user put operators on a slot of this division on this booking? Studio crew
+    /// is the Booking Officer's. Outside crew is the division's supervisor's, until the
+    /// daily roster is due: anything still undecided then, the Booking Officer can decide.
+    /// </summary>
+    public static bool MayStaff(Booking booking, Guid divisionId, IEnumerable<RoleAssignment> userRoles, DateTimeOffset now)
     {
         var division = new HashSet<Guid> { divisionId };
-        return HoldsRoleIn(userRoles, Role.Supervisor, division) || HoldsRoleIn(userRoles, Role.BookingOfficer, division);
+
+        if (CrewLead(booking.Venue) == Role.BookingOfficer)
+            return HoldsRoleIn(userRoles, Role.BookingOfficer, division);
+
+        return HoldsRoleIn(userRoles, Role.Supervisor, division)
+               || (now >= CrewDeadline(booking.StartsAt) && HoldsRoleIn(userRoles, Role.BookingOfficer, division));
     }
 
     /// <summary>Does the user hold this role in one of these units, or NBC-wide?</summary>

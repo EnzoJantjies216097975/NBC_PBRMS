@@ -46,14 +46,14 @@ public class RosterTests(TestApi api)
         var draft = await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 3), "O"));
         Assert.Equal(2, draft.Version);
         var first = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
-        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(Supervisor, first, "Camera", op)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(first, "Camera", op)).StatusCode);
         var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
         Assert.Equal(HttpStatusCode.OK, (await bookingOfficer.PostAsJsonAsync($"/bookings/{first.Id}/transition", new { action = "Cancel", note = "Clearing the way" }, Json)).StatusCode);
 
         // Once version 2 is published, the same assignment is refused.
         await PublishOkAsync(month);
         var second = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
-        Assert.Equal(HttpStatusCode.Conflict, (await api.AssignAsync(Supervisor, second, "Camera", op)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await api.AssignAsync(second, "Camera", op)).StatusCode);
 
         await api.WithDatabaseAsync(db =>
         {
@@ -71,7 +71,7 @@ public class RosterTests(TestApi api)
         await PublishOkAsync(month);
         var booking = await api.AtCrewStageAsync(StartOn(month, 4), Venue.Studio1, "Camera");
 
-        var response = await api.AssignAsync(Supervisor, booking, "Camera", op);
+        var response = await api.AssignAsync(booking, "Camera", op);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Contains("Leave", await response.Content.ReadAsStringAsync());
@@ -86,8 +86,8 @@ public class RosterTests(TestApi api)
         var first = await api.AtCrewStageAsync(StartOn(month, 5), Venue.Location, "Camera");
         var second = await api.AtCrewStageAsync(StartOn(month, 5), Venue.Location, "Camera");
 
-        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(Supervisor, first, "Camera", draftOff)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(Supervisor, second, "Camera", blank)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(first, "Camera", draftOff)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(second, "Camera", blank)).StatusCode);
     }
 
     [Fact]
@@ -100,8 +100,8 @@ public class RosterTests(TestApi api)
         var studio = await api.AtCrewStageAsync(StartOn(month, 6), Venue.Studio1, "Camera");
         var trip = await api.AtCrewStageAsync(StartOn(month, 6), Venue.Location, isTrip: true, "Camera");
 
-        Assert.Equal(HttpStatusCode.Conflict, (await api.AssignAsync(Supervisor, studio, "Camera", op, acknowledge: true)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(Supervisor, trip, "Camera", op, acknowledge: true)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await api.AssignAsync(studio, "Camera", op, acknowledge: true)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(trip, "Camera", op, acknowledge: true)).StatusCode);
     }
 
     [Fact]
@@ -113,12 +113,12 @@ public class RosterTests(TestApi api)
         await PublishOkAsync(month);
         var evening = await api.AtCrewStageAsync(StartOn(month, 7).AddHours(9), Venue.Studio1, "Camera"); // 19h00
 
-        var warned = await api.AssignAsync(Supervisor, evening, "Camera", op);
+        var warned = await api.AssignAsync(evening, "Camera", op);
         Assert.Contains("needsAcknowledgement", await warned.Content.ReadAsStringAsync());
         Assert.Contains("Not on shift", await warned.Content.ReadAsStringAsync());
         Assert.Empty(await LoggedAsync("tvops.manager@pbrms.test", month, op));
 
-        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(Supervisor, evening, "Camera", op, acknowledge: true)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(evening, "Camera", op, acknowledge: true)).StatusCode);
 
         var logged = Assert.Single(await LoggedAsync("tvops.manager@pbrms.test", month, op));
         Assert.Equal((ClashKind.OutsideShift, evening.ProductionNo), (logged.Kind, logged.ProductionNo));
@@ -137,7 +137,7 @@ public class RosterTests(TestApi api)
         await PublishOkAsync(month);
         var booking = await api.AtCrewStageAsync(StartOn(month, 17), Venue.Studio1, "Camera");
 
-        await api.AssignAsync(Supervisor, booking, "Camera", op, acknowledge: true);
+        await api.AssignAsync(booking, "Camera", op, acknowledge: true);
 
         Assert.Equal(ClashKind.CallIn, Assert.Single(await LoggedAsync(Supervisor, month, op)).Kind);
         Assert.Empty(await LoggedAsync("supervisor.sound@pbrms.test", month, op));
@@ -155,9 +155,9 @@ public class RosterTests(TestApi api)
         await SaveCellsOkAsync(month, new RosterCell(calledIn, DayOf(month, 18), "O"));
         await PublishOkAsync(month);
         var booking = await api.AtCrewStageAsync(StartOn(month, 18), Venue.Studio1, "Camera");
-        await api.AssignAsync(Supervisor, booking, "Camera", calledIn, acknowledge: true);
+        await api.AssignAsync(booking, "Camera", calledIn, acknowledge: true);
 
-        await api.AssignOkAsync(Supervisor, booking, "Camera", replacement);
+        await api.AssignOkAsync(booking, "Camera", replacement);
 
         Assert.Empty(await LoggedAsync("tvops.manager@pbrms.test", month, calledIn));
     }
@@ -168,7 +168,7 @@ public class RosterTests(TestApi api)
         var month = NewMonth();
         var op = await api.NewOperatorAsync("Camera");
         var booking = await api.AtCrewStageAsync(StartOn(month, 19), Venue.Studio1, "Camera");
-        await api.AssignOkAsync(Supervisor, booking, "Camera", op);
+        await api.AssignOkAsync(booking, "Camera", op);
         await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 19), "O"));
         await PublishOkAsync(month);
         var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
@@ -184,7 +184,7 @@ public class RosterTests(TestApi api)
         var month = NewMonth();
         var op = await api.NewOperatorAsync("Camera");
         var booking = await api.AtCrewStageAsync(StartOn(month, 20), Venue.Studio1, "Camera");
-        await api.AssignOkAsync(Supervisor, booking, "Camera", op);
+        await api.AssignOkAsync(booking, "Camera", op);
         await api.TransitionAsync("booking@pbrms.test", booking.Id, BookingAction.Approve);
         await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 20), "O"));
 
@@ -199,7 +199,7 @@ public class RosterTests(TestApi api)
         var month = NewMonth();
         var op = await api.NewOperatorAsync("Camera");
         var booking = await api.AtCrewStageAsync(StartOn(month, 8), Venue.Studio1, "Camera");
-        await api.AssignOkAsync(Supervisor, booking, "Camera", op);
+        await api.AssignOkAsync(booking, "Camera", op);
         await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 8), "L"));
         await PublishOkAsync(month);
         var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
@@ -215,7 +215,7 @@ public class RosterTests(TestApi api)
         var month = NewMonth();
         var op = await api.NewOperatorAsync("Camera");
         var booking = await api.AtCrewStageAsync(StartOn(month, 9), Venue.Studio2, "Camera");
-        await api.AssignOkAsync(Supervisor, booking, "Camera", op);
+        await api.AssignOkAsync(booking, "Camera", op);
         await api.TransitionAsync("booking@pbrms.test", booking.Id, BookingAction.Approve);
         await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 9), "L"));
 
@@ -336,13 +336,13 @@ public class RosterTests(TestApi api)
         var booking = await api.AtCrewStageAsync(StartOn(month, 10), Venue.Studio1, "Camera");
 
         // First try: a warning, and nothing is saved.
-        var warned = await api.AssignAsync(Supervisor, booking, "Camera", op);
+        var warned = await api.AssignAsync(booking, "Camera", op);
         Assert.Equal(HttpStatusCode.Conflict, warned.StatusCode);
         Assert.Contains("needsAcknowledgement", await warned.Content.ReadAsStringAsync());
         Assert.DoesNotContain(await api.NotificationsAsync(OperatorEmail(op)), n => n.BookingId == booking.Id);
 
         // Going ahead books them.
-        var assigned = await api.AssignAsync(Supervisor, booking, "Camera", op, acknowledge: true);
+        var assigned = await api.AssignAsync(booking, "Camera", op, acknowledge: true);
         Assert.Equal(HttpStatusCode.OK, assigned.StatusCode);
 
         var toOperator = Assert.Single(await api.NotificationsAsync(OperatorEmail(op)), n => n.BookingId == booking.Id);
@@ -360,7 +360,7 @@ public class RosterTests(TestApi api)
         await PublishOkAsync(month);
         var booking = await api.AtCrewStageAsync(StartOn(month, 11), Venue.Studio1, "Camera");
 
-        var response = await api.AssignAsync(Supervisor, booking, "Camera", op, acknowledge: true);
+        var response = await api.AssignAsync(booking, "Camera", op, acknowledge: true);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.DoesNotContain("needsAcknowledgement", await response.Content.ReadAsStringAsync());
@@ -372,7 +372,7 @@ public class RosterTests(TestApi api)
         var month = NewMonth();
         var op = await api.NewOperatorAsync("Camera");
         var booking = await api.AtCrewStageAsync(StartOn(month, 12), Venue.Studio1, "Camera");
-        await api.AssignOkAsync(Supervisor, booking, "Camera", op);
+        await api.AssignOkAsync(booking, "Camera", op);
         await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 12), "O"));
         await PublishOkAsync(month);
         var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
@@ -394,10 +394,10 @@ public class RosterTests(TestApi api)
         await PublishOkAsync(month);
         var booking = await api.AtCrewStageAsync(StartOn(month, 13).AddHours(4), Venue.Studio2, "Camera");
 
-        var warned = await api.AssignAsync("booking@pbrms.test", booking, "Camera", op);
+        var warned = await api.AssignAsync(booking, "Camera", op);
         Assert.Contains("needsAcknowledgement", await warned.Content.ReadAsStringAsync());
 
-        var moved = await api.AssignAsync("booking@pbrms.test", booking, "Camera", op, acknowledge: true);
+        var moved = await api.AssignAsync(booking, "Camera", op, acknowledge: true);
         Assert.Equal(HttpStatusCode.OK, moved.StatusCode);
 
         var toSupervisor = (await api.NotificationsAsync(Supervisor)).First(n => n.Text.Contains($"#{booking.ProductionNo}"));
@@ -414,7 +414,7 @@ public class RosterTests(TestApi api)
         await PublishOkAsync(month);
         var booking = await api.AtCrewStageAsync(StartOn(month, 14).AddHours(4), Venue.Studio1, "Camera");
 
-        var response = await api.AssignAsync(Supervisor, booking, "Camera", op);
+        var response = await api.AssignAsync(booking, "Camera", op);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -427,10 +427,10 @@ public class RosterTests(TestApi api)
         await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 15), "ST1"));
         await PublishOkAsync(month);
         var start = StartOn(month, 15).AddHours(4);
-        await api.AtCrewStageAsync(start, Venue.Studio1, "Camera"); // Studio 1 has a production then
+        await api.AtCrewStageAsync(start, Venue.Studio1, "Sound"); // Studio 1 has a production then
         var shoot = await api.AtCrewStageAsync(start, Venue.Location, "Camera");
 
-        var response = await api.AssignAsync(Supervisor, shoot, "Camera", op, acknowledge: true);
+        var response = await api.AssignAsync(shoot, "Camera", op, acknowledge: true);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Contains("in use", await response.Content.ReadAsStringAsync());
@@ -445,11 +445,73 @@ public class RosterTests(TestApi api)
         await PublishOkAsync(month);
         var shoot = await api.AtCrewStageAsync(StartOn(month, 16).AddHours(4), Venue.Location, "Camera");
 
-        var warned = await api.AssignAsync(Supervisor, shoot, "Camera", op);
+        var warned = await api.AssignAsync(shoot, "Camera", op);
         Assert.Contains("needsAcknowledgement", await warned.Content.ReadAsStringAsync());
 
-        var response = await api.AssignAsync(Supervisor, shoot, "Camera", op, acknowledge: true);
+        var response = await api.AssignAsync(shoot, "Camera", op, acknowledge: true);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_studio_production_is_crewed_automatically_from_the_published_roster()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 21), "ST1"));
+        await PublishOkAsync(month);
+
+        var booking = await api.AtCrewStageAsync(StartOn(month, 21).AddHours(4), Venue.Studio1, "Camera");
+
+        Assert.Equal(op, booking.CrewSlots[0].OperatorId);
+        Assert.Equal(BookingStatus.Finalisation, booking.Status);
+
+        // The operator hears only once the Booking Officer has confirmed it.
+        Assert.DoesNotContain(await api.NotificationsAsync(OperatorEmail(op)), n => n.BookingId == booking.Id);
+        await api.TransitionAsync("booking@pbrms.test", booking.Id, BookingAction.Approve);
+        Assert.Contains(await api.NotificationsAsync(OperatorEmail(op)), n => n.BookingId == booking.Id);
+    }
+
+    [Fact]
+    public async Task Auto_crewing_leaves_the_rest_for_the_booking_officer()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 22), "ST1"));
+        await PublishOkAsync(month);
+
+        var booking = await api.AtCrewStageAsync(StartOn(month, 22).AddHours(4), Venue.Studio1, "Camera", "Sound");
+
+        Assert.Equal(BookingStatus.CrewAssignment, booking.Status);
+        Assert.Equal(op, booking.CrewSlots.Single(s => s.Division == "Camera").OperatorId);
+        Assert.Null(booking.CrewSlots.Single(s => s.Division == "Sound").OperatorId);
+    }
+
+    [Fact]
+    public async Task Auto_crewing_skips_someone_already_on_another_production()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 23), "ST1"));
+        await PublishOkAsync(month);
+        var start = StartOn(month, 23).AddHours(4);
+        var first = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
+
+        var second = await api.AtCrewStageAsync(start, Venue.Studio1, "Camera");
+
+        Assert.Equal(op, first.CrewSlots[0].OperatorId);
+        Assert.Null(second.CrewSlots[0].OperatorId);
+    }
+
+    [Fact]
+    public async Task A_draft_roster_doesnt_crew_a_studio_production()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 24), "ST1"));
+
+        var booking = await api.AtCrewStageAsync(StartOn(month, 24).AddHours(4), Venue.Studio1, "Camera");
+
+        Assert.Null(booking.CrewSlots[0].OperatorId);
     }
 
     [Fact]

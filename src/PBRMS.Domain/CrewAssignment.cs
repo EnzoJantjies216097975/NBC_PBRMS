@@ -1,7 +1,7 @@
 namespace PBRMS.Domain;
 
 /// <summary>
-/// An operator put on a crew position by a supervisor or the Booking Officer.
+/// An operator put on a crew position by a supervisor, the Booking Officer, or the roster.
 /// A slot has at most one current assignment. Changing the operator doesn't overwrite
 /// the row: the old one gets <see cref="RemovedAt"/> and a new one is added, so we keep
 /// who was on the crew and who changed it (Backend Schema Document, "Audit and deletion").
@@ -20,8 +20,9 @@ public class CrewAssignment
     public Guid OperatorId { get; set; }
     public User Operator { get; set; } = null!;
 
-    public Guid AssignedById { get; set; }
-    public User AssignedBy { get; set; } = null!;
+    /// <summary>Who decided. Empty when it was filled automatically from the monthly roster.</summary>
+    public Guid? AssignedById { get; set; }
+    public User? AssignedBy { get; set; }
 
     public DateTimeOffset AssignedAt { get; set; }
 
