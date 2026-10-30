@@ -24,6 +24,7 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
     public DbSet<RosterEntry> RosterEntries => Set<RosterEntry>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<OffRosterWork> OffRosterWork => Set<OffRosterWork>();
+    public DbSet<DailyRoster> DailyRosters => Set<DailyRoster>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -189,6 +190,30 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
 
             // Recorded once, however many times the warning is acknowledged.
             work.HasIndex(w => new { w.CrewAssignmentId, w.Kind }).IsUnique();
+        });
+
+        modelBuilder.Entity<DailyRoster>(roster =>
+        {
+            roster.HasIndex(r => r.Date).IsUnique();
+            roster.Property(r => r.Announcement).HasMaxLength(1000);
+            roster.Property(r => r.RowVersion).IsRowVersion();
+            roster.HasOne(r => r.UpdatedBy).WithMany().HasForeignKey(r => r.UpdatedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DailyRosterLine>(line =>
+        {
+            line.Property(l => l.Area).HasMaxLength(40);
+            line.Property(l => l.Title).HasMaxLength(200);
+            line.Property(l => l.Detail).HasMaxLength(300);
+            line.HasOne<DailyRoster>().WithMany(r => r.Lines).HasForeignKey(l => l.DailyRosterId);
+            line.HasOne<Booking>().WithMany().HasForeignKey(l => l.BookingId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DailyRosterCrew>(crew =>
+        {
+            crew.Property(c => c.Division).HasMaxLength(80);
+            crew.Property(c => c.Name).HasMaxLength(170);
+            crew.HasOne<DailyRosterLine>().WithMany(l => l.Crew).HasForeignKey(c => c.DailyRosterLineId);
         });
     }
 }

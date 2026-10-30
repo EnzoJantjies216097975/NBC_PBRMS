@@ -7,7 +7,7 @@ namespace PBRMS.Data;
 /// Tells the people responsible when a production goes overtime: still running
 /// <see cref="BookingWorkflow.OverrunThreshold"/> after its booked end. It goes to the
 /// supervisors of its crew divisions, once per
-/// production. The API runs this every minute (see OvertimeWatcherService).
+/// production. The API runs this every minute (see MinuteChecksService).
 /// </summary>
 /// <remarks>
 /// Only a production the producer marked as started can be seen running. This alert

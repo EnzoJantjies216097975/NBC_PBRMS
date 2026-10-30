@@ -250,3 +250,27 @@ Content-Type: application/json
 ### Who was booked on a day off or outside their shift this month (@month from the roster steps).
 GET {{api}}/reports/off-roster-work?from={{month}}-01&to={{month}}-28
 Authorization: Bearer {{manager.response.body.token}}
+
+### ---- Daily roster (uses @day from the top of the file) ----
+
+### The sheet for the day: bookings, who is on duty, and what's still undecided.
+GET {{api}}/daily-roster/{{day}}
+Authorization: Bearer {{bookingOfficer.response.body.token}}
+
+### The Booking Officer adds an announcement.
+PUT {{api}}/daily-roster/{{day}}/announcement
+Authorization: Bearer {{bookingOfficer.response.body.token}}
+Content-Type: application/json
+
+{ "text": "Fire drill at 10h00" }
+
+### The Booking Officer adds a line of their own.
+PUT {{api}}/daily-roster/{{day}}/lines
+Authorization: Bearer {{bookingOfficer.response.body.token}}
+Content-Type: application/json
+
+{ "area": "Studio 3", "title": "Rig check", "startsAt": "{{day}}T08:00:00+02:00", "endsAt": "{{day}}T10:00:00+02:00" }
+
+### The A4 printout. REST Client shows the file details; use "Save Response" to keep the PDF.
+GET {{api}}/daily-roster/{{day}}/pdf
+Authorization: Bearer {{bookingOfficer.response.body.token}}

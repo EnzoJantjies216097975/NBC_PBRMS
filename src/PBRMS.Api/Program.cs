@@ -19,7 +19,9 @@ builder.Services.AddScoped<OffRosterLog>();
 builder.Services.AddScoped<StudioPrecedence>();
 builder.Services.AddScoped<CrewProgress>();
 builder.Services.AddScoped<OvertimeWatcher>();
-builder.Services.AddHostedService<OvertimeWatcherService>();
+builder.Services.AddScoped<CrewDeadlineWatcher>();
+builder.Services.AddScoped<DailyRosterComposer>();
+builder.Services.AddHostedService<MinuteChecksService>();
 
 builder.AddPbrmsSignIn();
 
@@ -66,6 +68,7 @@ app.MapRosterEndpoints();
 app.MapNotificationEndpoints();
 app.MapOffRosterEndpoints();
 app.MapConfirmationEndpoints();
+app.MapDailyRosterEndpoints();
 
 if (SignIn.IsDevelopmentMode(app.Configuration))
     app.MapDevLoginEndpoints();

@@ -13,6 +13,9 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <!-- Keep at exactly 6.2.4, the last MIT version. From 6.5.0 the licence is AGPL-3.0, which
+         has obligations for software run as a service. A test in DailyRosterTests fails if this changes. -->
+    <PackageReference Include="PDFsharp-MigraDoc" Version="[6.2.4]" />
   </ItemGroup>
 
   <ItemGroup>

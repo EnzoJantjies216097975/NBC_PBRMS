@@ -130,6 +130,31 @@ A production still running 30 minutes after its booked end counts as overtime. T
 supervisors of its crew divisions are told once.
 The API checks every minute, so on IIS the site must be set to Always Running.
 
+## The daily roster
+
+`GET /daily-roster/{yyyy-MM-dd}` builds the sheet fresh each time from confirmed bookings and
+the published monthly rosters, so a late booking appears by itself. People rostered but not on a
+production are listed too; days off and leave aren't. Bookings not yet confirmed are listed
+separately. Everyone can read it.
+
+The Booking Officer can change it, and only they can (BR-05):
+
+| Endpoint | What it does |
+| --- | --- |
+| `PUT /daily-roster/{date}/announcement` | The announcement at the top of the sheet |
+| `PUT /daily-roster/{date}/lines` | Change a production's row (give `bookingId`), hide it (`hidden: true`), or add a row of your own |
+| `DELETE /daily-roster/{date}/lines/{id}` | Discard a change: the row goes back to what was generated |
+| `GET /daily-roster/{date}/pdf` | The A4 landscape printout, named like `Roster_Tue_10112026.pdf` |
+
+Editing a row changes the sheet only. To change who is really on a production, change its crew,
+which keeps the clash checks and tells the people affected.
+
+At 16h00 the day before, the Booking Officer is told about any outside production still
+undecided, and can decide it.
+
+**PDF library:** PDFsharp/MigraDoc is pinned at exactly 6.2.4, the last MIT version. From 6.5.0 it
+is AGPL-3.0. Don't upgrade it without reading the licence; a test fails if the version changes.
+
 ## Run the tests
 
 ```

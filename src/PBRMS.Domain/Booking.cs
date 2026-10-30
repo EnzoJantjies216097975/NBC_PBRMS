@@ -66,6 +66,9 @@ public class Booking
     public DateTimeOffset? ActualStartAt { get; set; }
     public DateTimeOffset? ActualEndAt { get; set; }
 
+    /// <summary>When the Booking Officer was told its crew was still undecided at the deadline, so they are told only once.</summary>
+    public DateTimeOffset? BookingOfficerToldAt { get; set; }
+
     /// <summary>When people were told it had gone overtime, so they are told only once.</summary>
     public DateTimeOffset? OvertimeNotifiedAt { get; set; }
 

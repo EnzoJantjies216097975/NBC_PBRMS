@@ -48,6 +48,9 @@ namespace PBRMS.Data.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
+                    b.Property<DateTimeOffset?>("BookingOfficerToldAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset>("CallAt")
                         .HasColumnType("datetimeoffset");
 
@@ -234,6 +237,111 @@ namespace PBRMS.Data.Migrations
                     b.HasIndex("StartsAt", "EndsAt");
 
                     b.ToTable("CrewSlots");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.DailyRoster", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Announcement")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Date")
+                        .IsUnique();
+
+                    b.HasIndex("UpdatedById");
+
+                    b.ToTable("DailyRosters");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.DailyRosterCrew", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DailyRosterLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Division")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(170)
+                        .HasColumnType("nvarchar(170)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DailyRosterLineId");
+
+                    b.ToTable("DailyRosterCrew");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.DailyRosterLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Area")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid?>("BookingId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DailyRosterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTimeOffset?>("EndsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("Hidden")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("StartsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("DailyRosterId");
+
+                    b.ToTable("DailyRosterLine");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.MonthlyRoster", b =>
@@ -617,6 +725,40 @@ namespace PBRMS.Data.Migrations
                     b.Navigation("Division");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.DailyRoster", b =>
+                {
+                    b.HasOne("PBRMS.Domain.User", "UpdatedBy")
+                        .WithMany()
+                        .HasForeignKey("UpdatedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UpdatedBy");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.DailyRosterCrew", b =>
+                {
+                    b.HasOne("PBRMS.Domain.DailyRosterLine", null)
+                        .WithMany("Crew")
+                        .HasForeignKey("DailyRosterLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.DailyRosterLine", b =>
+                {
+                    b.HasOne("PBRMS.Domain.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PBRMS.Domain.DailyRoster", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("DailyRosterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PBRMS.Domain.MonthlyRoster", b =>
                 {
                     b.HasOne("PBRMS.Domain.OrgUnit", "Division")
@@ -738,6 +880,16 @@ namespace PBRMS.Data.Migrations
             modelBuilder.Entity("PBRMS.Domain.CrewSlot", b =>
                 {
                     b.Navigation("Assignments");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.DailyRoster", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.DailyRosterLine", b =>
+                {
+                    b.Navigation("Crew");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.MonthlyRoster", b =>
