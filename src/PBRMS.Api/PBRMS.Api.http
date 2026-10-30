@@ -85,25 +85,25 @@ Content-Type: application/json
 GET {{api}}/bookings/queue
 Authorization: Bearer {{ep.response.body.token}}
 
-### 4. The Executive Producer approves and sets the channel. Status: CrewAssignment. It's a studio production, so "crewLead" is BookingOfficer.
+### 4. The Executive Producer approves and sets the channel. It's a studio production, so "crewLead" is BookingOfficer. Anyone the roster has in Studio 1 is filled in automatically.
 POST {{api}}/bookings/{{booking.response.body.id}}/transition
 Authorization: Bearer {{ep.response.body.token}}
 Content-Type: application/json
 
 { "action": "Approve", "channel": "Nbc1" }
 
-### 5. It has gone to the Booking Officer and the supervisors at the same time. Here's the Booking Officer's queue.
+### 5. It's in the Booking Officer's queue. Supervisors don't see studio bookings.
 GET {{api}}/bookings/queue
 Authorization: Bearer {{bookingOfficer.response.body.token}}
 
-### 6. The supervisor opens the crew picker: Camera's operators.
+### 6. The Booking Officer opens the crew picker: Camera's operators.
 # @name operators
 GET {{api}}/org-units/{{units.response.body.$[0].id}}/operators
-Authorization: Bearer {{supervisor.response.body.token}}
+Authorization: Bearer {{bookingOfficer.response.body.token}}
 
-### 7. The supervisor assigns the first operator. That fills the last position. Status: Finalisation.
+### 7. The Booking Officer assigns the first operator. That fills the last position. Status: Finalisation. (If step 4 already filled it from the roster, this changes nothing.)
 PUT {{api}}/bookings/{{booking.response.body.id}}/crew
-Authorization: Bearer {{supervisor.response.body.token}}
+Authorization: Bearer {{bookingOfficer.response.body.token}}
 Content-Type: application/json
 
 {
