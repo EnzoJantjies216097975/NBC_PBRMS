@@ -169,3 +169,45 @@ Content-Type: application/json
 
 ### No token. Answer: 401.
 GET {{api}}/me
+
+
+### ---- Monthly roster (needs the sign-ins and "units" above, and step 6) ----
+# Use a month with no bookings yet. Change @month to start a fresh roster.
+
+@month = 2027-04
+
+### The Camera legend: what each shift code means.
+GET {{api}}/shift-definitions/{{units.response.body.$[0].id}}
+Authorization: Bearer {{supervisor.response.body.token}}
+
+### R1. The supervisor fills in two cells. Status: Draft.
+PUT {{api}}/rosters/{{units.response.body.$[0].id}}/{{month}}
+Authorization: Bearer {{supervisor.response.body.token}}
+Content-Type: application/json
+
+{
+  "entries": [
+    { "operatorId": "{{operators.response.body.$[0].id}}", "date": "{{month}}-01", "code": "L" },
+    { "operatorId": "{{operators.response.body.$[0].id}}", "date": "{{month}}-02", "code": "A1" }
+  ]
+}
+
+### R2. See the grid.
+GET {{api}}/rosters/{{units.response.body.$[0].id}}/{{month}}
+Authorization: Bearer {{supervisor.response.body.token}}
+
+### R3. Publish it. Status: Published. "clashes" lists any confirmed booking it upsets.
+POST {{api}}/rosters/{{units.response.body.$[0].id}}/{{month}}/publish
+Authorization: Bearer {{supervisor.response.body.token}}
+
+### R4. Is that operator free on the 1st? No: they're on leave.
+GET {{api}}/operators/{{operators.response.body.$[0].id}}/conflicts?from={{month}}-01T09:00:00%2B02:00&to={{month}}-01T11:00:00%2B02:00
+Authorization: Bearer {{supervisor.response.body.token}}
+
+### R5. On the 2nd, inside their 08h00–17h00 shift? Yes: [] means free.
+GET {{api}}/operators/{{operators.response.body.$[0].id}}/conflicts?from={{month}}-02T09:00:00%2B02:00&to={{month}}-02T11:00:00%2B02:00
+Authorization: Bearer {{supervisor.response.body.token}}
+
+### R6. In the evening of the 2nd? No: outside their shift.
+GET {{api}}/operators/{{operators.response.body.$[0].id}}/conflicts?from={{month}}-02T19:00:00%2B02:00&to={{month}}-02T21:00:00%2B02:00
+Authorization: Bearer {{supervisor.response.body.token}}

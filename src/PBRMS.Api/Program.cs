@@ -54,6 +54,8 @@ app.MapBookingTransitionEndpoints();
 app.MapBookingCrewEndpoints();
 app.MapBookingFinalisationEndpoints();
 app.MapOperatorEndpoints();
+app.MapShiftDefinitionEndpoints();
+app.MapRosterEndpoints();
 
 if (SignIn.IsDevelopmentMode(app.Configuration))
     app.MapDevLoginEndpoints();

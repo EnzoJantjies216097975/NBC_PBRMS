@@ -58,9 +58,9 @@ public static class BookingCrewEndpoints
 
         var clashes = new List<Clash>();
         foreach (var (slot, operatorId) in newOperators)
-            clashes.AddRange(await clashChecker.ForOperatorAsync(operatorId!.Value, slot.StartsAt, slot.EndsAt, booking.Id));
+            clashes.AddRange(await clashChecker.ForOperatorAsync(operatorId!.Value, slot.StartsAt, slot.EndsAt, booking.Id, booking.IsTrip));
         if (clashes.Count > 0)
-            return Problems.Clashes("An operator is already on another production at that time.", clashes.Distinct().ToList());
+            return Problems.Clashes("An operator can't work this position at that time.", clashes.Distinct().ToList());
 
         // 3. Apply the changes. The old assignment is kept and marked removed, not deleted.
         var now = DateTimeOffset.UtcNow;

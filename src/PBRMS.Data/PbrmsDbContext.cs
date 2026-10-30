@@ -19,6 +19,9 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
     public DbSet<CrewSlot> CrewSlots => Set<CrewSlot>();
     public DbSet<CrewAssignment> CrewAssignments => Set<CrewAssignment>();
     public DbSet<BookingStatusChange> BookingStatusChanges => Set<BookingStatusChange>();
+    public DbSet<ShiftDefinition> ShiftDefinitions => Set<ShiftDefinition>();
+    public DbSet<MonthlyRoster> MonthlyRosters => Set<MonthlyRoster>();
+    public DbSet<RosterEntry> RosterEntries => Set<RosterEntry>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -128,6 +131,40 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
 
             // For the clash check (Backend Schema Document, "Key indexes").
             assignment.HasIndex(a => a.OperatorId);
+        });
+
+        modelBuilder.Entity<ShiftDefinition>(shift =>
+        {
+            shift.Property(s => s.Code).HasMaxLength(12);
+            shift.Property(s => s.Label).HasMaxLength(80);
+            shift.Property(s => s.Colour).HasMaxLength(9);
+            shift.HasOne(s => s.Division).WithMany().HasForeignKey(s => s.DivisionId).OnDelete(DeleteBehavior.Restrict);
+
+            // A code means one thing within a division. Different divisions may reuse it.
+            shift.HasIndex(s => new { s.DivisionId, s.Code }).IsUnique();
+        });
+
+        modelBuilder.Entity<MonthlyRoster>(roster =>
+        {
+            roster.Property(r => r.RowVersion).IsRowVersion();
+            roster.HasOne(r => r.Division).WithMany().HasForeignKey(r => r.DivisionId).OnDelete(DeleteBehavior.Restrict);
+            roster.HasOne(r => r.PublishedBy).WithMany().HasForeignKey(r => r.PublishedById).OnDelete(DeleteBehavior.Restrict);
+
+            // Also stops two people starting the same new version at the same moment.
+            roster.HasIndex(r => new { r.DivisionId, r.Month, r.Version }).IsUnique();
+        });
+
+        modelBuilder.Entity<RosterEntry>(entry =>
+        {
+            entry.Property(e => e.ShiftCode).HasMaxLength(30);
+            entry.HasOne(e => e.Roster).WithMany(r => r.Entries).HasForeignKey(e => e.MonthlyRosterId);
+            entry.HasOne(e => e.Operator).WithMany().HasForeignKey(e => e.OperatorId).OnDelete(DeleteBehavior.Restrict);
+
+            // One cell per operator per day in each roster version.
+            entry.HasIndex(e => new { e.MonthlyRosterId, e.OperatorId, e.Date }).IsUnique();
+
+            // For schedules and the clash check (Backend Schema Document, "Key indexes").
+            entry.HasIndex(e => new { e.OperatorId, e.Date });
         });
     }
 }

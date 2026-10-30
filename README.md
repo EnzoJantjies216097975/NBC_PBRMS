@@ -51,7 +51,13 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `GET /bookings/{id}/clashes` | Everything the booking clashes with |
 | `PUT /bookings/{id}/schedule` | The Booking Officer moves a booking at Finalisation to another studio or time |
 | `GET /org-units/{id}/operators` | Active operators in a division, for the crew picker |
-| `GET /operators/{id}/conflicts?from=&to=` | What an operator is on during a period |
+| `GET /operators/{id}/conflicts?from=&to=` | Why an operator can't work a period: other productions, and the published roster |
+| `GET /shift-definitions/{divisionId}` | A division's legend of shift codes |
+| `POST /shift-definitions/{divisionId}`, `PUT .../{id}` | Add or change a code (the division's supervisor or an Admin). Retire one with `isActive: false`. |
+| `GET /rosters/{divisionId}/{yyyy-MM}` | The newest roster version for a month |
+| `PUT /rosters/{divisionId}/{yyyy-MM}` | Save changed cells: `{ "entries": [{ "operatorId": "...", "date": "2027-03-01", "code": "A1" }] }`. Editing a published roster starts a new draft. |
+| `GET /rosters/{divisionId}/{yyyy-MM}/clashes` | Confirmed bookings this roster would upset |
+| `POST /rosters/{divisionId}/{yyyy-MM}/publish` | Put the draft in force. Clashes come back as warnings. |
 
 Send every request except health and dev-login with `Authorization: Bearer <token>`.
 

@@ -46,6 +46,9 @@ public sealed class TestApi : WebApplicationFactory<Program>, IAsyncLifetime
         {
             // Delete children before parents, so the foreign keys allow it.
             // Add new tables here, in the same order, when the schema grows.
+            await db.RosterEntries.ExecuteDeleteAsync();
+            await db.MonthlyRosters.ExecuteDeleteAsync();
+            await db.ShiftDefinitions.ExecuteDeleteAsync();
             await db.BookingStatusChanges.ExecuteDeleteAsync();
             await db.CrewAssignments.ExecuteDeleteAsync();
             await db.CrewSlots.ExecuteDeleteAsync();

@@ -7,21 +7,26 @@ public enum ClashKind
     Operator,
 
     /// <summary>A studio is used by another production at the same time.</summary>
-    Venue
+    Venue,
+
+    /// <summary>The published roster says the operator is off, away or not on shift.</summary>
+    Roster
 }
 
 /// <summary>
-/// One clash: what is double-booked, and the production it clashes with. The apps show
+/// One clash: what is double-booked, and what it clashes with. The apps show
 /// these so people know exactly what to fix (a clash is an HTTP 409 with the productions listed).
 /// </summary>
 /// <param name="Who">The operator's name, or the venue.</param>
-public record Clash(ClashKind Kind, string Who, int ProductionNo, string Title, DateTimeOffset StartsAt, DateTimeOffset EndsAt);
+/// <param name="ProductionNo">The production in the way. Empty when the clash is with the roster itself.</param>
+/// <param name="Title">The production's title, or why the roster says no.</param>
+public record Clash(ClashKind Kind, string Who, int? ProductionNo, string Title, DateTimeOffset StartsAt, DateTimeOffset EndsAt);
 
 /// <summary>
 /// What counts as a clash (BR-06). The rules are here with no database code; the
 /// queries that apply them are in PBRMS.Data, ClashChecker.
 /// </summary>
-/// <remarks>Monthly roster entries and equipment bookings join this check when they are built (TR-01).</remarks>
+/// <remarks>Equipment bookings join this check when they are built (TR-01). Roster rules are in <see cref="RosterRules"/>.</remarks>
 public static class ClashRules
 {
     /// <summary>

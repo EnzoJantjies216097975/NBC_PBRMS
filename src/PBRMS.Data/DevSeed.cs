@@ -17,8 +17,44 @@ public static class DevSeed
     /// <summary>Email of the sample user who has left NBC (inactive), for testing refusals.</summary>
     public const string FormerStaffEmail = "former.staff@pbrms.test";
 
-    /// <summary>Adds the sample data if the database has no users yet. Safe to run every start.</summary>
+    /// <summary>Adds whatever sample data is missing, keeping what's there. Safe to run every start.</summary>
     public static async Task RunAsync(PbrmsDbContext db)
+    {
+        await AddPeopleAsync(db);
+        await AddLegendsAsync(db);
+    }
+
+    /// <summary>
+    /// A small legend for each crew division, in the style of the printed ones. The real
+    /// legends will be imported from the Production Board later.
+    /// </summary>
+    private static async Task AddLegendsAsync(PbrmsDbContext db)
+    {
+        if (await db.ShiftDefinitions.AnyAsync())
+            return;
+
+        var divisions = await db.OrgUnits.Where(u => u.Kind == OrgUnitKind.TvOpsDivision).ToListAsync();
+        foreach (var division in divisions)
+        {
+            db.ShiftDefinitions.AddRange(
+                new ShiftDefinition { Division = division, Code = "O", Label = "Off", Kind = ShiftKind.Off },
+                new ShiftDefinition { Division = division, Code = "L", Label = "Leave", Kind = ShiftKind.Off },
+                new ShiftDefinition { Division = division, Code = "TR", Label = "Trip, out of town", Kind = ShiftKind.Away },
+                new ShiftDefinition { Division = division, Code = "OB", Label = "Outside broadcast", Kind = ShiftKind.Worked },
+                new ShiftDefinition { Division = division, Code = "A1", Label = "Any production", Kind = ShiftKind.Worked, Start = new(8, 0), End = new(17, 0) },
+                new ShiftDefinition { Division = division, Code = "ST1", Label = "Studio 1", Kind = ShiftKind.Worked, Start = new(13, 0), End = new(21, 0) },
+                new ShiftDefinition
+                {
+                    Division = division, Code = "ST2", Label = "Studio 2", Kind = ShiftKind.Worked,
+                    Start = new(5, 0), End = new(14, 0), SecondStart = new(13, 0), SecondEnd = new(22, 0)
+                },
+                new ShiftDefinition { Division = division, Code = "N", Label = "Night", Kind = ShiftKind.Worked, Start = new(19, 0), End = new(2, 0) });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task AddPeopleAsync(PbrmsDbContext db)
     {
         if (await db.Users.AnyAsync())
             return;

@@ -227,6 +227,51 @@ namespace PBRMS.Data.Migrations
                     b.ToTable("CrewSlots");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.MonthlyRoster", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DivisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Month")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("PublishedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublishedById");
+
+                    b.HasIndex("DivisionId", "Month", "Version")
+                        .IsUnique();
+
+                    b.ToTable("MonthlyRosters");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.OrgUnit", b =>
                 {
                     b.Property<Guid>("Id")
@@ -280,6 +325,87 @@ namespace PBRMS.Data.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("RoleAssignments");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.RosterEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("MonthlyRosterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ShiftCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperatorId", "Date");
+
+                    b.HasIndex("MonthlyRosterId", "OperatorId", "Date")
+                        .IsUnique();
+
+                    b.ToTable("RosterEntries");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.ShiftDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
+                    b.Property<string>("Colour")
+                        .HasMaxLength(9)
+                        .HasColumnType("nvarchar(9)");
+
+                    b.Property<Guid>("DivisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<TimeOnly?>("End")
+                        .HasColumnType("time");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<TimeOnly?>("SecondEnd")
+                        .HasColumnType("time");
+
+                    b.Property<TimeOnly?>("SecondStart")
+                        .HasColumnType("time");
+
+                    b.Property<TimeOnly?>("Start")
+                        .HasColumnType("time");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DivisionId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("ShiftDefinitions");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.User", b =>
@@ -412,6 +538,24 @@ namespace PBRMS.Data.Migrations
                     b.Navigation("Division");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.MonthlyRoster", b =>
+                {
+                    b.HasOne("PBRMS.Domain.OrgUnit", "Division")
+                        .WithMany()
+                        .HasForeignKey("DivisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PBRMS.Domain.User", "PublishedBy")
+                        .WithMany()
+                        .HasForeignKey("PublishedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Division");
+
+                    b.Navigation("PublishedBy");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.OrgUnit", b =>
                 {
                     b.HasOne("PBRMS.Domain.OrgUnit", "Parent")
@@ -440,6 +584,36 @@ namespace PBRMS.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.RosterEntry", b =>
+                {
+                    b.HasOne("PBRMS.Domain.MonthlyRoster", "Roster")
+                        .WithMany("Entries")
+                        .HasForeignKey("MonthlyRosterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PBRMS.Domain.User", "Operator")
+                        .WithMany()
+                        .HasForeignKey("OperatorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Operator");
+
+                    b.Navigation("Roster");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.ShiftDefinition", b =>
+                {
+                    b.HasOne("PBRMS.Domain.OrgUnit", "Division")
+                        .WithMany()
+                        .HasForeignKey("DivisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Division");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.Booking", b =>
                 {
                     b.Navigation("CrewSlots");
@@ -450,6 +624,11 @@ namespace PBRMS.Data.Migrations
             modelBuilder.Entity("PBRMS.Domain.CrewSlot", b =>
                 {
                     b.Navigation("Assignments");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.MonthlyRoster", b =>
+                {
+                    b.Navigation("Entries");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.User", b =>
