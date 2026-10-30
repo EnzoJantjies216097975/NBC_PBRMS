@@ -12,6 +12,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<PbrmsDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Pbrms")));
 
+builder.Services.AddScoped<ClashChecker>();
+
 builder.AddPbrmsSignIn();
 
 // Send enums as text ("Supervisor") rather than numbers, so the apps don't need a lookup table.
@@ -49,6 +51,9 @@ app.MapOrgUnitEndpoints();
 app.MapBookingFormEndpoints();
 app.MapBookingQueryEndpoints();
 app.MapBookingTransitionEndpoints();
+app.MapBookingCrewEndpoints();
+app.MapBookingFinalisationEndpoints();
+app.MapOperatorEndpoints();
 
 if (SignIn.IsDevelopmentMode(app.Configuration))
     app.MapDevLoginEndpoints();
@@ -63,4 +68,4 @@ if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Databas
     await DevSeed.RunAsync(db);
 }
 
-app.Run();
+await app.RunAsync();

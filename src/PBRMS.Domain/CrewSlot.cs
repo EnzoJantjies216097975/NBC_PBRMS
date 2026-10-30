@@ -15,6 +15,7 @@ public class CrewSlot
     public Guid Id { get; set; }
 
     public Guid BookingId { get; set; }
+    public Booking Booking { get; set; } = null!;
 
     /// <summary>The TV Ops division that supplies this position (Camera, Sound…).</summary>
     public Guid DivisionId { get; set; }
@@ -29,4 +30,10 @@ public class CrewSlot
 
     /// <summary>Gear this position needs beyond the usual, e.g. "Steadicam".</summary>
     public string? SpecialEquipment { get; set; }
+
+    /// <summary>Everyone who has been on this slot. At most one is current; see <see cref="Current"/>.</summary>
+    public List<CrewAssignment> Assignments { get; set; } = [];
+
+    /// <summary>The assignment now in force, or null if the slot is empty.</summary>
+    public CrewAssignment? Current => Assignments.FirstOrDefault(a => a.RemovedAt is null);
 }

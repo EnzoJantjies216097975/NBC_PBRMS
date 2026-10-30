@@ -37,8 +37,10 @@ public static class BookingWorkflow
     /// supervisor sends it back to the EP (App Flow Document, BR-07).
     /// </summary>
     /// <remarks>
-    /// Crew assignment → Finalisation → Confirmed come with the crew-assignment work,
-    /// because confirming needs the clash check (TR-02).
+    /// Crew assignment → Finalisation isn't listed because nobody presses a button for
+    /// it: the booking moves by itself when the last crew slot is filled, so it reaches
+    /// the Booking Officer only when every division has assigned crew (FR-BOOK-06).
+    /// Finalisation → Confirmed also needs the clash check (TR-02); see the transition endpoint.
     /// </remarks>
     public static readonly IReadOnlyList<Step> Steps =
     [
@@ -51,6 +53,8 @@ public static class BookingWorkflow
         new(BookingStatus.EpReview, BookingAction.SendBack, Role.ExecutiveProducer, BookingStatus.Draft),
 
         new(BookingStatus.CrewAssignment, BookingAction.SendBack, Role.Supervisor, BookingStatus.EpReview),
+
+        new(BookingStatus.Finalisation, BookingAction.Approve, Role.BookingOfficer, BookingStatus.Confirmed),
     ];
 
     /// <summary>Besides the booking's own producer, these roles may cancel a booking.</summary>
@@ -90,6 +94,16 @@ public static class BookingWorkflow
     public static bool MayCancel(Booking booking, Guid userId, IEnumerable<RoleAssignment> userRoles, ISet<Guid> departmentChain) =>
         booking.ProducerId == userId
         || CancelledBy.Any(role => HoldsRoleIn(userRoles, role, departmentChain));
+
+    /// <summary>
+    /// May this user put operators on a slot of this division? The division's supervisor,
+    /// or the Booking Officer, who can adjust any crew (Backend Schema Document, PUT /bookings/{id}/crew).
+    /// </summary>
+    public static bool MayStaff(Guid divisionId, IEnumerable<RoleAssignment> userRoles)
+    {
+        var division = new HashSet<Guid> { divisionId };
+        return HoldsRoleIn(userRoles, Role.Supervisor, division) || HoldsRoleIn(userRoles, Role.BookingOfficer, division);
+    }
 
     /// <summary>Does the user hold this role in one of these units, or NBC-wide?</summary>
     public static bool HoldsRoleIn(IEnumerable<RoleAssignment> userRoles, Role role, ISet<Guid> units) =>

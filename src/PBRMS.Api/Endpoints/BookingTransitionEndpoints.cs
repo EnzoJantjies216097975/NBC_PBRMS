@@ -18,9 +18,14 @@ public static class BookingTransitionEndpoints
         app.MapPost("/bookings/{id:guid}/transition", Transition).RequireAuthorization();
     }
 
-    private static async Task<IResult> Transition(Guid id, TransitionRequest request, ClaimsPrincipal principal, PbrmsDbContext db)
+    private static async Task<IResult> Transition(Guid id, TransitionRequest request, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker)
     {
-        var booking = await db.Bookings.Include(b => b.CrewSlots).FirstOrDefaultAsync(b => b.Id == id);
+        // One transaction, so the clash check and the confirmation stand or fall together (TR-02).
+        await using var transaction = await db.Database.BeginTransactionAsync();
+
+        var booking = await db.Bookings
+            .Include(b => b.CrewSlots).ThenInclude(s => s.Assignments.Where(a => a.RemovedAt == null))
+            .FirstOrDefaultAsync(b => b.Id == id);
         if (booking is null)
             return Results.NotFound();
 
@@ -49,6 +54,19 @@ public static class BookingTransitionEndpoints
             // list (FR-BOOK-06). With no crew list it would reach nobody.
             if (step.Action == BookingAction.Submit && booking.CrewSlots.Count == 0)
                 return Problems.Invalid("crewSlots", "Add at least one crew position before submitting.");
+
+            // A booking can't be confirmed with an unresolved clash (BR-06, TR-02). The locks
+            // make sure nobody takes this crew or studio between the check and the save.
+            if (step.To == BookingStatus.Confirmed)
+            {
+                if (booking.CrewSlots.Any(s => s.Current is null))
+                    return Problems.Conflict("Every crew position must be filled before confirming.");
+
+                await ClashLocks.TakeAsync(db, ClashLocks.ForBooking(booking));
+                var clashes = await clashChecker.ForBookingAsync(booking);
+                if (clashes.Count > 0)
+                    return Problems.Clashes("This booking still has clashes to resolve.", clashes);
+            }
 
             newStatus = step.To;
         }
@@ -81,6 +99,7 @@ public static class BookingTransitionEndpoints
         try
         {
             await db.SaveChangesAsync();
+            await transaction.CommitAsync();
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -98,6 +117,7 @@ public static class BookingTransitionEndpoints
         Role.ProductionManager => "the department's Production Manager",
         Role.ExecutiveProducer => "the department's Executive Producer",
         Role.Supervisor => "a supervisor of one of the booking's crew divisions",
+        Role.BookingOfficer => "the Booking Officer",
         _ => $"a {role}"
     };
 }

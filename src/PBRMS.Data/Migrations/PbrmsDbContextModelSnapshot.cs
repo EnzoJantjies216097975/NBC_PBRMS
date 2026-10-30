@@ -155,6 +155,40 @@ namespace PBRMS.Data.Migrations
                     b.ToTable("BookingStatusChanges");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.CrewAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("AssignedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CrewSlotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedById");
+
+                    b.HasIndex("CrewSlotId")
+                        .IsUnique()
+                        .HasFilter("[RemovedAt] IS NULL");
+
+                    b.HasIndex("OperatorId");
+
+                    b.ToTable("CrewAssignments");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.CrewSlot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -187,6 +221,8 @@ namespace PBRMS.Data.Migrations
                     b.HasIndex("BookingId");
 
                     b.HasIndex("DivisionId");
+
+                    b.HasIndex("StartsAt", "EndsAt");
 
                     b.ToTable("CrewSlots");
                 });
@@ -330,9 +366,36 @@ namespace PBRMS.Data.Migrations
                     b.Navigation("Actor");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.CrewAssignment", b =>
+                {
+                    b.HasOne("PBRMS.Domain.User", "AssignedBy")
+                        .WithMany()
+                        .HasForeignKey("AssignedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PBRMS.Domain.CrewSlot", "CrewSlot")
+                        .WithMany("Assignments")
+                        .HasForeignKey("CrewSlotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PBRMS.Domain.User", "Operator")
+                        .WithMany()
+                        .HasForeignKey("OperatorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AssignedBy");
+
+                    b.Navigation("CrewSlot");
+
+                    b.Navigation("Operator");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.CrewSlot", b =>
                 {
-                    b.HasOne("PBRMS.Domain.Booking", null)
+                    b.HasOne("PBRMS.Domain.Booking", "Booking")
                         .WithMany("CrewSlots")
                         .HasForeignKey("BookingId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -343,6 +406,8 @@ namespace PBRMS.Data.Migrations
                         .HasForeignKey("DivisionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Booking");
 
                     b.Navigation("Division");
                 });
@@ -380,6 +445,11 @@ namespace PBRMS.Data.Migrations
                     b.Navigation("CrewSlots");
 
                     b.Navigation("History");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.CrewSlot", b =>
+                {
+                    b.Navigation("Assignments");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.User", b =>

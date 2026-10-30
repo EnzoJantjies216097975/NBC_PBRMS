@@ -47,6 +47,11 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `GET /bookings/mine` | Your bookings, as a producer |
 | `GET /bookings/queue` | Bookings waiting for you to approve or send back |
 | `POST /bookings/{id}/transition` | `{ "action": "Submit" \| "Approve" \| "SendBack" \| "Cancel", "note": "..." }` |
+| `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. Supervisors and the Booking Officer. Filling the last slot moves the booking on to Finalisation. |
+| `GET /bookings/{id}/clashes` | Everything the booking clashes with |
+| `PUT /bookings/{id}/schedule` | The Booking Officer moves a booking at Finalisation to another studio or time |
+| `GET /org-units/{id}/operators` | Active operators in a division, for the crew picker |
+| `GET /operators/{id}/conflicts?from=&to=` | What an operator is on during a period |
 
 Send every request except health and dev-login with `Authorization: Bearer <token>`.
 
@@ -60,6 +65,7 @@ Send every request except health and dev-login with `Authorization: Bearer <toke
 | `supervisor@` | Supervisor and Operator, Camera |
 | `supervisor.sound@` | Supervisor, Sound |
 | `operator@` | Operator, Sound |
+| `camera@` | Operator, Camera |
 | `producer.sports@` | Producer, Sports |
 | `booking@`, `admin@`, `management@` | Booking Officer, Admin, Management (NBC-wide) |
 | `former.staff@` | Has left; refused |

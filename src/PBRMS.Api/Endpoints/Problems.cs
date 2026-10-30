@@ -1,3 +1,5 @@
+using PBRMS.Domain;
+
 namespace PBRMS.Api.Endpoints;
 
 /// <summary>
@@ -11,6 +13,12 @@ internal static class Problems
 
     /// <summary>409: the request is fine, but the record's current state doesn't allow it.</summary>
     public static IResult Conflict(string why) => Results.Problem(why, statusCode: StatusCodes.Status409Conflict);
+
+    /// <summary>409 with the clashes listed, so the app can show exactly which productions are in the way.</summary>
+    public static IResult Clashes(string why, List<Clash> clashes) => Results.Problem(
+        why,
+        statusCode: StatusCodes.Status409Conflict,
+        extensions: new Dictionary<string, object?> { ["clashes"] = clashes });
 
     /// <summary>400: something in the request needs fixing; says which field and why.</summary>
     public static IResult Invalid(string field, string why) => Results.ValidationProblem(new Dictionary<string, string[]> { [field] = [why] });

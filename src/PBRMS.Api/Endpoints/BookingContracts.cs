@@ -35,6 +35,15 @@ public record CrewSlotForm(Guid DivisionId, string PositionLabel, DateTimeOffset
 /// <param name="AirAt">The EP may set the air date and time when approving.</param>
 public record TransitionRequest(BookingAction Action, string? Note, Channel? Channel, DateTimeOffset? AirAt);
 
+/// <summary>Fill or empty crew positions on a booking. Positions not listed stay as they are.</summary>
+public record CrewRequest(List<CrewChange> Assignments);
+
+/// <summary>Put this operator on this slot. An empty OperatorId takes the current operator off it.</summary>
+public record CrewChange(Guid SlotId, Guid? OperatorId);
+
+/// <summary>The Booking Officer's changes to where and when a booking happens.</summary>
+public record ScheduleRequest(Venue Venue, string? VenueText, DateTimeOffset CallAt, DateTimeOffset StartsAt, DateTimeOffset EndsAt);
+
 /// <summary>A booking as the apps see it, with its crew positions and history.</summary>
 public record BookingResponse(
     Guid Id,
@@ -70,7 +79,12 @@ public record BookingResponse(
         b.IsTrip, b.IsOb, b.AllocationCode, b.Notes,
         b.CrewSlots
             .OrderBy(s => s.Division.Name).ThenBy(s => s.PositionLabel)
-            .Select(s => new CrewSlotResponse(s.Id, s.DivisionId, s.Division.Name, s.PositionLabel, s.StartsAt, s.EndsAt, s.SpecialEquipment))
+            .Select(s => new CrewSlotResponse(
+                s.Id, s.DivisionId, s.Division.Name, s.PositionLabel, s.StartsAt, s.EndsAt, s.SpecialEquipment,
+                s.Current?.OperatorId,
+                s.Current is null ? null : $"{s.Current.Operator.FirstName} {s.Current.Operator.Surname}",
+                // Phone numbers only once the crew is final: the producer's confirmed crew list (E1-03).
+                b.Status is BookingStatus.Confirmed or BookingStatus.InProgress ? s.Current?.Operator.Phone : null))
             .ToList(),
         b.History
             .OrderBy(h => h.At)
@@ -78,7 +92,18 @@ public record BookingResponse(
             .ToList());
 }
 
-public record CrewSlotResponse(Guid Id, Guid DivisionId, string Division, string PositionLabel, DateTimeOffset StartsAt, DateTimeOffset EndsAt, string? SpecialEquipment);
+/// <summary>A crew position and who is on it. The operator fields are null while it is empty.</summary>
+public record CrewSlotResponse(
+    Guid Id,
+    Guid DivisionId,
+    string Division,
+    string PositionLabel,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    string? SpecialEquipment,
+    Guid? OperatorId,
+    string? Operator,
+    string? OperatorPhone);
 
 public record StatusChangeResponse(BookingStatus From, BookingStatus To, string By, string? Note, DateTimeOffset At);
 
@@ -90,6 +115,7 @@ public static class BookingQueries
         .Include(b => b.Department)
         .Include(b => b.Producer)
         .Include(b => b.CrewSlots).ThenInclude(s => s.Division)
+        .Include(b => b.CrewSlots).ThenInclude(s => s.Assignments.Where(a => a.RemovedAt == null)).ThenInclude(a => a.Operator)
         .Include(b => b.History).ThenInclude(h => h.Actor)
         .AsSplitQuery(); // one query per list instead of one huge joined result
 

@@ -488,3 +488,6 @@ skills/
 # Docs for the current NBC Production Board. They describe NBC's internal setup
 # and its security gaps, so they stay out of this public repository.
 docs/
+# Downloaded packages (see nuget.config) and local run logs and test results
+.nuget/
+.tmp/

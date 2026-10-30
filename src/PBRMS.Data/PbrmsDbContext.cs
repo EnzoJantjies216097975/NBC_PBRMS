@@ -17,6 +17,7 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
     public DbSet<RoleAssignment> RoleAssignments => Set<RoleAssignment>();
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<CrewSlot> CrewSlots => Set<CrewSlot>();
+    public DbSet<CrewAssignment> CrewAssignments => Set<CrewAssignment>();
     public DbSet<BookingStatusChange> BookingStatusChanges => Set<BookingStatusChange>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -93,10 +94,16 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
             slot.Property(s => s.PositionLabel).HasMaxLength(60);
             slot.Property(s => s.SpecialEquipment).HasMaxLength(200);
 
+            // A computed shortcut (the assignment now in force), not a column.
+            slot.Ignore(s => s.Current);
+
             // Slots belong to their booking. While a booking is a draft the producer can
             // remove a slot, and the row goes with it.
-            slot.HasOne<Booking>().WithMany(b => b.CrewSlots).HasForeignKey(s => s.BookingId);
+            slot.HasOne(s => s.Booking).WithMany(b => b.CrewSlots).HasForeignKey(s => s.BookingId);
             slot.HasOne(s => s.Division).WithMany().HasForeignKey(s => s.DivisionId).OnDelete(DeleteBehavior.Restrict);
+
+            // For the clash check.
+            slot.HasIndex(s => new { s.StartsAt, s.EndsAt });
         });
 
         modelBuilder.Entity<BookingStatusChange>(change =>
@@ -104,6 +111,23 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
             change.Property(c => c.Note).HasMaxLength(1000);
             change.HasOne<Booking>().WithMany(b => b.History).HasForeignKey(c => c.BookingId);
             change.HasOne(c => c.Actor).WithMany().HasForeignKey(c => c.ActorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CrewAssignment>(assignment =>
+        {
+            // Goes with its slot if the producer removes the slot from a draft. Otherwise
+            // assignments are never deleted, only marked removed.
+            assignment.HasOne(a => a.CrewSlot).WithMany(s => s.Assignments).HasForeignKey(a => a.CrewSlotId);
+
+            assignment.HasOne(a => a.Operator).WithMany().HasForeignKey(a => a.OperatorId).OnDelete(DeleteBehavior.Restrict);
+            assignment.HasOne(a => a.AssignedBy).WithMany().HasForeignKey(a => a.AssignedById).OnDelete(DeleteBehavior.Restrict);
+
+            // At most one current assignment per slot. A database rule, so it holds even
+            // if two people fill the same slot at the same moment.
+            assignment.HasIndex(a => a.CrewSlotId).IsUnique().HasFilter("[RemovedAt] IS NULL");
+
+            // For the clash check (Backend Schema Document, "Key indexes").
+            assignment.HasIndex(a => a.OperatorId);
         });
     }
 }

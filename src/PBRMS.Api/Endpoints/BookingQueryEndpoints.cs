@@ -13,7 +13,7 @@ namespace PBRMS.Api.Endpoints;
 public static class BookingQueryEndpoints
 {
     /// <summary>Everyone except operators can read bookings (Backend Schema Document). Operators will see their own crew calls instead.</summary>
-    private static readonly string[] BookingReaders = Enum.GetNames<Role>().Where(r => r != nameof(Role.Operator)).ToArray();
+    internal static readonly string[] BookingReaders = Enum.GetNames<Role>().Where(r => r != nameof(Role.Operator)).ToArray();
 
     public static void MapBookingQueryEndpoints(this WebApplication app)
     {

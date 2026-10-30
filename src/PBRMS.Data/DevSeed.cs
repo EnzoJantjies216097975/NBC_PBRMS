@@ -41,6 +41,7 @@ public static class DevSeed
             Person("Test", "Supervisor", "supervisor@pbrms.test", (Role.Supervisor, camera), (Role.Operator, camera)),
             Person("Test", "SoundSupervisor", "supervisor.sound@pbrms.test", (Role.Supervisor, sound)),
             Person("Test", "Operator", "operator@pbrms.test", (Role.Operator, sound)),
+            Person("Test", "CameraOperator", "camera@pbrms.test", (Role.Operator, camera)),
             Person("Test", "SportsProducer", "producer.sports@pbrms.test", (Role.Producer, sports)),
 
             // NBC-wide roles: not tied to one unit.
