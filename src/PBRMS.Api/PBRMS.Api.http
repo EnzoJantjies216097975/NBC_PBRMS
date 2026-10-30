@@ -1,19 +1,171 @@
-# Try the API by hand: start it with "dotnet run --project src/PBRMS.Api",
-# then click "Send Request" above each block (VS Code needs the REST Client extension;
-# Visual Studio and Rider support .http files out of the box).
+# A walk through the whole approval chain, using the sample people.
+#
+# 1. In a terminal:  dotnet run --project src/PBRMS.Api
+# 2. Needs the REST Client extension in VS Code. Click "Send Request" above each
+#    block, IN ORDER FROM THE TOP: later steps use the answers from earlier ones.
+#    The answer opens on the right.
+#
+# To go through it again, change @day to a date you haven't used. Or leave it the
+# same to see a clash at step 8: the answer names the production in the way.
 
 @api = http://localhost:5188
+@day = 2026-12-01
+
 
 ### Is the API up, and can it reach the database?
 GET {{api}}/health
 
-### Sign in as a sample user (Development only). Other emails are in src/PBRMS.Data/DevSeed.cs.
-# @name login
+
+### ---- Sign everyone in (Development only: no password) ----
+
+### Producer
+# @name producer
+POST {{api}}/auth/dev-login
+Content-Type: application/json
+
+{ "email": "producer@pbrms.test" }
+
+### Production Manager
+# @name pm
+POST {{api}}/auth/dev-login
+Content-Type: application/json
+
+{ "email": "pm@pbrms.test" }
+
+### Executive Producer
+# @name ep
+POST {{api}}/auth/dev-login
+Content-Type: application/json
+
+{ "email": "ep@pbrms.test" }
+
+### Camera supervisor
+# @name supervisor
 POST {{api}}/auth/dev-login
 Content-Type: application/json
 
 { "email": "supervisor@pbrms.test" }
 
-### Who am I? Uses the token from the sign-in above.
+### Booking Officer
+# @name bookingOfficer
+POST {{api}}/auth/dev-login
+Content-Type: application/json
+
+{ "email": "booking@pbrms.test" }
+
+
+### Who am I? Shows the supervisor's roles.
 GET {{api}}/me
-Authorization: Bearer {{login.response.body.token}}
+Authorization: Bearer {{supervisor.response.body.token}}
+
+
+### Departments and divisions, sorted by name: Camera, News, Sound, Sports.
+# @name units
+GET {{api}}/org-units
+Authorization: Bearer {{producer.response.body.token}}
+
+
+### ---- The approval chain ----
+
+### 1. The producer fills in the booking form. Status: Draft.
+# @name booking
+POST {{api}}/bookings
+Authorization: Bearer {{producer.response.body.token}}
+Content-Type: application/json
+
+{
+  "title": "Morning Show",
+  "departmentId": "{{units.response.body.$[1].id}}",
+  "activityType": "Recording",
+  "venue": "Studio1",
+  "callAt": "{{day}}T06:00:00+02:00",
+  "startsAt": "{{day}}T06:30:00+02:00",
+  "endsAt": "{{day}}T09:00:00+02:00",
+  "crewSlots": [
+    { "divisionId": "{{units.response.body.$[0].id}}", "positionLabel": "Camera 1" }
+  ]
+}
+
+### 2. The producer submits it. Status: PmReview.
+POST {{api}}/bookings/{{booking.response.body.id}}/transition
+Authorization: Bearer {{producer.response.body.token}}
+Content-Type: application/json
+
+{ "action": "Submit" }
+
+### 3. It's in the Production Manager's queue.
+GET {{api}}/bookings/queue
+Authorization: Bearer {{pm.response.body.token}}
+
+### 4. The Production Manager approves. Status: EpReview.
+POST {{api}}/bookings/{{booking.response.body.id}}/transition
+Authorization: Bearer {{pm.response.body.token}}
+Content-Type: application/json
+
+{ "action": "Approve", "note": "Looks fine" }
+
+### 5. The Executive Producer approves and sets the channel. Status: CrewAssignment.
+POST {{api}}/bookings/{{booking.response.body.id}}/transition
+Authorization: Bearer {{ep.response.body.token}}
+Content-Type: application/json
+
+{ "action": "Approve", "channel": "Nbc1" }
+
+### 6. The supervisor opens the crew picker: Camera's operators.
+# @name operators
+GET {{api}}/org-units/{{units.response.body.$[0].id}}/operators
+Authorization: Bearer {{supervisor.response.body.token}}
+
+### 7. The supervisor assigns the first operator. That fills the last position. Status: Finalisation.
+PUT {{api}}/bookings/{{booking.response.body.id}}/crew
+Authorization: Bearer {{supervisor.response.body.token}}
+Content-Type: application/json
+
+{
+  "assignments": [
+    { "slotId": "{{booking.response.body.$.crewSlots[0].id}}", "operatorId": "{{operators.response.body.$[0].id}}" }
+  ]
+}
+
+### 8. The Booking Officer checks for clashes. [] means none.
+GET {{api}}/bookings/{{booking.response.body.id}}/clashes
+Authorization: Bearer {{bookingOfficer.response.body.token}}
+
+### 9. The Booking Officer confirms. Status: Confirmed.
+POST {{api}}/bookings/{{booking.response.body.id}}/transition
+Authorization: Bearer {{bookingOfficer.response.body.token}}
+Content-Type: application/json
+
+{ "action": "Approve" }
+
+### 10. The finished booking: crew, and every step in "history".
+GET {{api}}/bookings/{{booking.response.body.id}}
+Authorization: Bearer {{producer.response.body.token}}
+
+
+### ---- Things that must be refused ----
+
+### The producer can't approve bookings. Answer: 403, or 409 once it's past review.
+POST {{api}}/bookings/{{booking.response.body.id}}/transition
+Authorization: Bearer {{producer.response.body.token}}
+Content-Type: application/json
+
+{ "action": "Approve" }
+
+### A form that ends before it starts. Answer: 400, with the reason.
+POST {{api}}/bookings
+Authorization: Bearer {{producer.response.body.token}}
+Content-Type: application/json
+
+{
+  "title": "Backwards",
+  "departmentId": "{{units.response.body.$[1].id}}",
+  "activityType": "Recording",
+  "venue": "Studio2",
+  "callAt": "{{day}}T08:00:00+02:00",
+  "startsAt": "{{day}}T10:00:00+02:00",
+  "endsAt": "{{day}}T09:00:00+02:00"
+}
+
+### No token. Answer: 401.
+GET {{api}}/me
