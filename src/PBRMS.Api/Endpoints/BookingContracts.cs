@@ -129,3 +129,14 @@ public static class BookingQueries
     public static async Task<BookingResponse> LoadResponseAsync(PbrmsDbContext db, Guid bookingId) =>
         BookingResponse.From(await db.Bookings.WithDetails().SingleAsync(b => b.Id == bookingId));
 }
+
+/// <summary>
+/// The services the crew and transition endpoints use, gathered into one parameter so
+/// their signatures stay short. ASP.NET fills it in from the [AsParameters] attribute.
+/// </summary>
+public record BookingServices(
+    PbrmsDbContext Db,
+    ClashChecker ClashChecker,
+    Notifier Notifier,
+    OffRosterLog OffRosterLog,
+    StudioPrecedence StudioPrecedence);

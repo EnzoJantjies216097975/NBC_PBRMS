@@ -11,8 +11,8 @@ public record RosterFinding(ClashKind Kind, string Reason, Venue? Studio = null)
 ///
 ///   On leave                  Refused. The supervisor must book someone else.
 ///   Rostered away             Refused, unless the booking is itself a trip.
-///   Not on shift at that time Refused.
-///   Day off                   A warning. They can be called in, and are then notified.
+///   Not on shift at that time A warning, logged for HR.
+///   Day off                   A warning, logged for HR. They can be called in, and are then notified.
 ///   Rostered to another studio A warning, and the supervisor sorts out the cover.
 /// </summary>
 public static class RosterRules
@@ -75,7 +75,7 @@ public static class RosterRules
         // isn't a question of hours (the board's rule). A code with no fixed hours fits anything.
         var hoursMatter = !forTrip && to - from < TimeSpan.FromHours(24) && working.All(s => s.Start is not null);
         if (hoursMatter && touching.Count == 0)
-            return new RosterFinding(ClashKind.Roster, $"Not on shift at that time ({Describe(shifts)})");
+            return new RosterFinding(ClashKind.OutsideShift, $"Not on shift at that time ({Describe(shifts)})");
 
         // Rostered to a studio, but this work is somewhere else. A shift not tied to a
         // studio leaves them free to go anywhere.

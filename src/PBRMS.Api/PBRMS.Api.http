@@ -255,3 +255,17 @@ Authorization: Bearer {{producer.response.body.token}}
 Content-Type: application/json
 
 { "action": "End" }
+
+
+### ---- Report for the TV Operations Manager and HR ----
+
+### Sign in as HR
+# @name hr
+POST {{api}}/auth/dev-login
+Content-Type: application/json
+
+{ "email": "hr@pbrms.test" }
+
+### Who was booked on a day off or outside their shift this month (@month from the roster steps).
+GET {{api}}/reports/off-roster-work?from={{month}}-01&to={{month}}-28
+Authorization: Bearer {{hr.response.body.token}}

@@ -95,9 +95,12 @@ public class RosterRulesTests
     }
 
     [Fact]
-    public void Entirely_outside_the_shift_is_a_clash()
+    public void Entirely_outside_the_shift_is_a_warning()
     {
-        Assert.Contains("Not on shift", Reason(18, 20, false, Day));
+        var finding = RosterRules.Check([Day], Monday, At(18), At(20), false);
+
+        Assert.Equal(ClashKind.OutsideShift, finding!.Kind);
+        Assert.True(new Clash(finding.Kind, "", null, "", At(18), At(20)).IsWarning);
     }
 
     [Fact]

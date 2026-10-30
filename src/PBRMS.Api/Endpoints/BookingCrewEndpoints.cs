@@ -11,10 +11,12 @@ namespace PBRMS.Api.Endpoints;
 /// When the last slot is filled the booking moves on to the Booking Officer by itself,
 /// so it reaches them only when every division has assigned crew (FR-BOOK-06).
 ///
-/// A clash (on leave, on another production) stops the assignment. A warning (a day
-/// off, rostered to another studio) goes back to the person assigning, who can go ahead
-/// by sending the request again with acknowledgeWarnings: true. Going ahead notifies
-/// the people affected. See <see cref="RosterRules"/>.
+/// A clash (on leave, on another studio production) stops the assignment. A warning (a
+/// day off, outside their shift, another studio) goes back to the person assigning, who
+/// can go ahead by sending the request again with acknowledgeWarnings: true. Going ahead
+/// notifies the people affected, and work outside the roster is logged for HR. A studio
+/// production takes precedence over an outside one, so it can take an operator off it.
+/// See <see cref="RosterRules"/> and <see cref="StudioPrecedence"/>.
 /// </summary>
 public static class BookingCrewEndpoints
 {
@@ -24,8 +26,10 @@ public static class BookingCrewEndpoints
             .RequireAuthorization(p => p.RequireRole(nameof(Role.Supervisor), nameof(Role.BookingOfficer)));
     }
 
-    private static async Task<IResult> AssignCrew(Guid id, CrewRequest request, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker, Notifier notifier)
+    private static async Task<IResult> AssignCrew(Guid id, CrewRequest request, ClaimsPrincipal principal, [AsParameters] BookingServices services)
     {
+        var (db, clashChecker, notifier, offRosterLog, studioPrecedence) = services;
+
         // Everything happens in one transaction, so the clash locks are held until the save is committed.
         await using var transaction = await db.Database.BeginTransactionAsync();
 
@@ -47,7 +51,7 @@ public static class BookingCrewEndpoints
 
         // 2. Lock the operators, then check they're free (see ClashLocks for why in that order).
         var newOperators = changes.Where(c => c.OperatorId is not null).ToList();
-        await ClashLocks.TakeAsync(db, newOperators.Select(c => ClashLocks.ForOperator(c.OperatorId.Value)));
+        await ClashLocks.TakeAsync(db, newOperators.Select(c => ClashLocks.ForOperator(c.OperatorId!.Value)));
         var found = await FindClashesAsync(newOperators, booking, clashChecker);
 
         var blocking = found.Select(f => f.Clash).Where(c => !c.IsWarning).Distinct().ToList();
@@ -62,12 +66,21 @@ public static class BookingCrewEndpoints
         var replaced = ApplyChanges(changes, caller.UserId);
         PassOnIfFull(booking, caller.UserId);
 
-        // 4. Tell the people affected.
+        // 4. Act on the warnings that were acknowledged: take operators off outside
+        //    productions, log work outside the roster, and tell the people affected.
+        foreach (var assignmentId in warnings.Where(w => w.Clash.Kind == ClashKind.TakeFromOutside).Select(w => w.Clash.AssignmentId!.Value).Distinct())
+            await studioPrecedence.TakeAsync(assignmentId, booking, caller.UserId);
+
         foreach (var (slot, operatorId, warning) in warnings)
+        {
+            if (ClashRules.IsOffRoster(warning.Kind))
+                offRosterLog.Record(slot.Current!, warning, caller.UserId);
+
             await TellAboutWarningAsync(notifier, booking, slot, operatorId, warning, caller.UserId);
+        }
 
         if (booking.Status == BookingStatus.Confirmed)
-            TellAboutCrewChange(notifier, booking, replaced, newOperators.Select(c => c.OperatorId.Value));
+            TellAboutCrewChange(notifier, booking, replaced, newOperators.Select(c => c.OperatorId!.Value));
 
         try
         {
@@ -124,6 +137,7 @@ public static class BookingCrewEndpoints
         foreach (var (slot, operatorId) in newOperators)
         {
             var clashes = await clashChecker.ForOperatorAsync(operatorId!.Value, slot.StartsAt, slot.EndsAt, booking);
+            clashes.AddRange(await clashChecker.StudiosNeedingCrewAsync(booking, slot));
             found.AddRange(clashes.Select(clash => (slot, operatorId.Value, clash)));
         }
 
@@ -172,9 +186,9 @@ public static class BookingCrewEndpoints
     }
 
     /// <summary>
-    /// After someone went ahead despite a warning. Calling someone in tells that operator,
-    /// plus the division's supervisors and the Booking Officer. Moving someone away from
-    /// their rostered studio tells the supervisors, who must then sort out that studio's cover.
+    /// After someone went ahead despite a warning. Work outside the roster tells the
+    /// operator, the division's supervisors, the TV Operations Manager and the Booking
+    /// Officer. Warnings about studios tell the supervisors, who must sort out the cover.
     /// The person who made the change already saw the warning, so they aren't told again.
     /// </summary>
     private static async Task TellAboutWarningAsync(Notifier notifier, Booking booking, CrewSlot slot, Guid operatorId, Clash warning, Guid actorId)
@@ -182,14 +196,17 @@ public static class BookingCrewEndpoints
         var production = $"#{booking.ProductionNo} {booking.Title} ({NbcTime.Text(slot.StartsAt)})";
         var supervisors = await notifier.PeopleWithRoleAsync(Role.Supervisor, slot.DivisionId);
 
-        if (warning.Kind == ClashKind.CallIn)
+        if (ClashRules.IsOffRoster(warning.Kind))
         {
-            notifier.Send([operatorId], $"You have been called in on your day off for {production}.", booking.Id);
+            var reason = warning.Kind == ClashKind.CallIn ? "on a day off" : "outside their shift";
+            var yourReason = warning.Kind == ClashKind.CallIn ? "on your day off" : "outside your shift";
+            notifier.Send([operatorId], $"You have been called in {yourReason} for {production}.", booking.Id);
 
+            var manager = await notifier.PeopleWithRoleAsync(Role.TvOperationsManager);
             var bookingOfficers = await notifier.PeopleWithRoleAsync(Role.BookingOfficer);
             notifier.Send(
-                supervisors.Concat(bookingOfficers).Where(person => person != actorId),
-                $"{warning.Who} has been called in on a day off for {production}.",
+                supervisors.Concat(manager).Concat(bookingOfficers).Where(person => person != actorId),
+                $"{warning.Who} has been called in {reason} for {production}.",
                 booking.Id);
         }
         else if (warning.Kind == ClashKind.RosteredElsewhere)
@@ -197,6 +214,13 @@ public static class BookingCrewEndpoints
             notifier.Send(
                 supervisors.Where(person => person != actorId),
                 $"{warning.Who} is now on {production} at {booking.Venue}. {warning.Title}. Please make the changes needed to cover it.",
+                booking.Id);
+        }
+        else if (warning.Kind == ClashKind.StudioNeedsCrew)
+        {
+            notifier.Send(
+                supervisors.Where(person => person != actorId),
+                $"{production} at {booking.Venue} was crewed while studio production #{warning.ProductionNo} {warning.Title} still needs {warning.Who}.",
                 booking.Id);
         }
     }

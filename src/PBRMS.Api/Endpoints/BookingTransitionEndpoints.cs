@@ -18,8 +18,10 @@ public static class BookingTransitionEndpoints
         app.MapPost("/bookings/{id:guid}/transition", Transition).RequireAuthorization();
     }
 
-    private static async Task<IResult> Transition(Guid id, TransitionRequest request, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker, Notifier notifier)
+    private static async Task<IResult> Transition(Guid id, TransitionRequest request, ClaimsPrincipal principal, [AsParameters] BookingServices services)
     {
+        var db = services.Db;
+
         // One transaction, so the clash check and the confirmation stand or fall together (TR-02).
         await using var transaction = await db.Database.BeginTransactionAsync();
 
@@ -34,48 +36,9 @@ public static class BookingTransitionEndpoints
         var departmentChain = OrgUnit.ChainUp(booking.DepartmentId, units);
 
         // 1. Is this move allowed at this stage, and by this person?
-        BookingStatus newStatus;
-        if (request.Action == BookingAction.Cancel)
-        {
-            if (!BookingWorkflow.CanBeCancelled(booking.Status))
-                return Problems.Conflict($"A booking that is {booking.Status} can't be cancelled.");
-            if (!BookingWorkflow.MayCancel(booking, caller.UserId, caller.Roles, departmentChain))
-                return Problems.Forbidden("Only the booking's producer, its department's PM or EP, the Booking Officer or an Admin can cancel it.");
-            newStatus = BookingStatus.Cancelled;
-        }
-        else
-        {
-            var step = BookingWorkflow.FindStep(booking.Status, request.Action);
-            if (step is null)
-                return Problems.Conflict($"A booking in {booking.Status} can't take the action '{request.Action}'.");
-            if (!BookingWorkflow.MayTake(step, booking, caller.UserId, caller.Roles, departmentChain))
-                return Problems.Forbidden($"At this stage only {Describe(step.ActedBy)} can do this.");
-
-            // EP approval sends the booking to the supervisors of the divisions in its crew
-            // list (FR-BOOK-06). With no crew list it would reach nobody.
-            if (step.Action == BookingAction.Submit && booking.CrewSlots.Count == 0)
-                return Problems.Invalid("crewSlots", "Add at least one crew position before submitting.");
-
-            // A booking can't be confirmed with an unresolved clash (BR-06, TR-02). The locks
-            // make sure nobody takes this crew or studio between the check and the save.
-            // Warnings don't block, but the Booking Officer must see them first.
-            if (step.To == BookingStatus.Confirmed)
-            {
-                if (booking.CrewSlots.Any(s => s.Current is null))
-                    return Problems.Conflict("Every crew position must be filled before confirming.");
-
-                await ClashLocks.TakeAsync(db, ClashLocks.ForBooking(booking));
-                var clashes = await clashChecker.ForBookingAsync(booking);
-
-                var blocking = clashes.Where(c => !c.IsWarning).ToList();
-                if (blocking.Count > 0)
-                    return Problems.Clashes("This booking still has clashes to resolve.", blocking);
-                if (clashes.Count > 0 && !request.AcknowledgeWarnings)
-                    return Problems.Warnings("Check these before confirming.", clashes);
-            }
-
-            newStatus = step.To;
-        }
+        var (newStatus, problem) = await CheckMoveAsync(booking, request, caller, departmentChain, services);
+        if (problem is not null)
+            return problem;
 
         // 2. Sending back and cancelling must say why.
         var note = request.Note?.Trim();
@@ -84,9 +47,102 @@ public static class BookingTransitionEndpoints
         if (note?.Length > 1000)
             return Problems.Invalid("note", "Keep the note to 1000 characters.");
 
-        var now = DateTimeOffset.UtcNow;
-
         // 3. What this particular step records.
+        var now = DateTimeOffset.UtcNow;
+        RecordStepDetails(booking, request, now);
+
+        // 4. Record the change and save. Every change goes into the history (TR-03).
+        booking.History.Add(new BookingStatusChange
+        {
+            FromStatus = booking.Status,
+            ToStatus = newStatus,
+            ActorId = caller.UserId,
+            Note = string.IsNullOrEmpty(note) ? null : note,
+            At = now
+        });
+        booking.Status = newStatus;
+
+        if (newStatus == BookingStatus.Confirmed)
+            await TellConfirmedAsync(booking, departmentChain, services.Notifier);
+
+        try
+        {
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Someone else saved this booking between our read and our save (see Booking.RowVersion).
+            return Problems.Conflict("Someone else changed this booking at the same moment. Reload it and try again.");
+        }
+
+        return Results.Ok(await BookingQueries.LoadResponseAsync(db, id));
+    }
+
+    /// <summary>The status this request moves the booking to, or the problem with it.</summary>
+    private static async Task<(BookingStatus NewStatus, IResult? Problem)> CheckMoveAsync(
+        Booking booking, TransitionRequest request, Caller caller, HashSet<Guid> departmentChain, BookingServices services)
+    {
+        if (request.Action == BookingAction.Cancel)
+        {
+            if (!BookingWorkflow.CanBeCancelled(booking.Status))
+                return (booking.Status, Problems.Conflict($"A booking that is {booking.Status} can't be cancelled."));
+            if (!BookingWorkflow.MayCancel(booking, caller.UserId, caller.Roles, departmentChain))
+                return (booking.Status, Problems.Forbidden("Only the booking's producer, its department's PM or EP, the Booking Officer or an Admin can cancel it."));
+            return (BookingStatus.Cancelled, null);
+        }
+
+        var step = BookingWorkflow.FindStep(booking.Status, request.Action);
+        if (step is null)
+            return (booking.Status, Problems.Conflict($"A booking in {booking.Status} can't take the action '{request.Action}'."));
+        if (!BookingWorkflow.MayTake(step, booking, caller.UserId, caller.Roles, departmentChain))
+            return (booking.Status, Problems.Forbidden($"At this stage only {Describe(step.ActedBy)} can do this."));
+
+        // EP approval sends the booking to the supervisors of the divisions in its crew
+        // list (FR-BOOK-06). With no crew list it would reach nobody.
+        if (step.Action == BookingAction.Submit && booking.CrewSlots.Count == 0)
+            return (booking.Status, Problems.Invalid("crewSlots", "Add at least one crew position before submitting."));
+
+        if (step.To == BookingStatus.Confirmed && await CheckConfirmAsync(booking, request, caller, services) is { } problem)
+            return (booking.Status, problem);
+
+        return (step.To, null);
+    }
+
+    /// <summary>
+    /// A booking can't be confirmed with an unresolved clash (BR-06, TR-02). The locks make
+    /// sure nobody takes this crew or studio between the check and the save. Warnings don't
+    /// block, but the Booking Officer must see them first. Returns the problem, if any.
+    /// </summary>
+    private static async Task<IResult?> CheckConfirmAsync(Booking booking, TransitionRequest request, Caller caller, BookingServices services)
+    {
+        if (booking.CrewSlots.Any(s => s.Current is null))
+            return Problems.Conflict("Every crew position must be filled before confirming.");
+
+        await ClashLocks.TakeAsync(services.Db, ClashLocks.ForBooking(booking));
+        var clashes = await services.ClashChecker.ForBookingAsync(booking);
+
+        var blocking = clashes.Where(c => !c.IsWarning).ToList();
+        if (blocking.Count > 0)
+            return Problems.Clashes("This booking still has clashes to resolve.", blocking);
+        if (clashes.Count > 0 && !request.AcknowledgeWarnings)
+            return Problems.Warnings("Check these before confirming.", clashes);
+
+        // Acknowledged, so act on them. These can appear after the crew was assigned: the
+        // roster changed, or the booking was moved onto an outside production's crew.
+        foreach (var clash in clashes)
+        {
+            await services.OffRosterLog.RecordIfNewAsync(clash, caller.UserId);
+            if (clash.Kind == ClashKind.TakeFromOutside)
+                await services.StudioPrecedence.TakeAsync(clash.AssignmentId!.Value, booking, caller.UserId);
+        }
+
+        return null;
+    }
+
+    /// <summary>What some steps record besides the status.</summary>
+    private static void RecordStepDetails(Booking booking, TransitionRequest request, DateTimeOffset now)
+    {
         switch (request.Action)
         {
             // The EP checks the air date and channel when approving (App Flow Document, step 3).
@@ -101,41 +157,18 @@ public static class BookingTransitionEndpoints
                 booking.ActualEndAt = now;
                 break;
         }
+    }
 
-        // 4. Record the change and save. Every change goes into the history (TR-03).
-        booking.History.Add(new BookingStatusChange
-        {
-            FromStatus = booking.Status,
-            ToStatus = newStatus,
-            ActorId = caller.UserId,
-            Note = string.IsNullOrEmpty(note) ? null : note,
-            At = now
-        });
-        booking.Status = newStatus;
+    /// <summary>Confirmed: the producer, the EP and every assigned operator are told (App Flow Document, step 6).</summary>
+    private static async Task TellConfirmedAsync(Booking booking, HashSet<Guid> departmentChain, Notifier notifier)
+    {
+        var eps = await notifier.PeopleWithRoleAsync(Role.ExecutiveProducer, departmentChain);
+        var crew = booking.CrewSlots.Select(s => s.Current!.OperatorId);
 
-        // Confirmed: producer, EP and every assigned operator are told (App Flow Document, step 6).
-        if (newStatus == BookingStatus.Confirmed)
-        {
-            var eps = await notifier.PeopleWithRoleAsync(Role.ExecutiveProducer, departmentChain);
-            var crew = booking.CrewSlots.Select(s => s.Current!.OperatorId);
-            notifier.Send(
-                crew.Concat(eps).Append(booking.ProducerId),
-                $"#{booking.ProductionNo} {booking.Title} is confirmed for {NbcTime.Text(booking.StartsAt)}.",
-                booking.Id);
-        }
-
-        try
-        {
-            await db.SaveChangesAsync();
-            await transaction.CommitAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            // Someone else saved this booking between our read and our save (see Booking.RowVersion).
-            return Problems.Conflict("Someone else changed this booking at the same moment. Reload it and try again.");
-        }
-
-        return Results.Ok(await BookingQueries.LoadResponseAsync(db, id));
+        notifier.Send(
+            crew.Concat(eps).Append(booking.ProducerId),
+            $"#{booking.ProductionNo} {booking.Title} is confirmed for {NbcTime.Text(booking.StartsAt)}.",
+            booking.Id);
     }
 
     /// <summary>Who acts at a stage, in words for the error message.</summary>

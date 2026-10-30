@@ -21,6 +21,7 @@ public static class DevSeed
     public static async Task RunAsync(PbrmsDbContext db)
     {
         await AddPeopleAsync(db);
+        await AddOfficePeopleAsync(db);
         await AddLegendsAsync(db);
     }
 
@@ -49,6 +50,24 @@ public static class DevSeed
                     Start = new(5, 0), End = new(14, 0), SecondStart = new(13, 0), SecondEnd = new(22, 0)
                 },
                 new ShiftDefinition { Division = division, Code = "N", Label = "Night", Kind = ShiftKind.Worked, Start = new(19, 0), End = new(2, 0) });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>People added after the first sample set, so they reach existing development databases too.</summary>
+    private static async Task AddOfficePeopleAsync(PbrmsDbContext db)
+    {
+        User[] people =
+        [
+            Person("Test", "TvOperationsManager", "tvops.manager@pbrms.test", (Role.TvOperationsManager, null)),
+            Person("Test", "Hr", "hr@pbrms.test", (Role.Hr, null))
+        ];
+
+        foreach (var person in people)
+        {
+            if (!await db.Users.AnyAsync(u => u.WorkEmail == person.WorkEmail))
+                db.Users.Add(person);
         }
 
         await db.SaveChangesAsync();

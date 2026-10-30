@@ -15,5 +15,11 @@ public enum Role
     BookingOfficer,
     Operator,
     Admin,
-    Management
+    Management,
+
+    /// <summary>Runs TV Operations. Told about, and can see, work outside the roster.</summary>
+    TvOperationsManager,
+
+    /// <summary>Human Resources. Can see the log of work outside the roster.</summary>
+    Hr
 }

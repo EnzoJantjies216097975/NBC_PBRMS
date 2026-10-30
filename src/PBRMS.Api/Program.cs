@@ -15,6 +15,8 @@ builder.Services.AddDbContext<PbrmsDbContext>(options =>
 
 builder.Services.AddScoped<ClashChecker>();
 builder.Services.AddScoped<Notifier>();
+builder.Services.AddScoped<OffRosterLog>();
+builder.Services.AddScoped<StudioPrecedence>();
 builder.Services.AddScoped<OvertimeWatcher>();
 builder.Services.AddHostedService<OvertimeWatcherService>();
 
@@ -61,6 +63,7 @@ app.MapOperatorEndpoints();
 app.MapShiftDefinitionEndpoints();
 app.MapRosterEndpoints();
 app.MapNotificationEndpoints();
+app.MapOffRosterEndpoints();
 
 if (SignIn.IsDevelopmentMode(app.Configuration))
     app.MapDevLoginEndpoints();

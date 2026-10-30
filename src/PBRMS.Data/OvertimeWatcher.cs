@@ -6,7 +6,7 @@ namespace PBRMS.Data;
 /// <summary>
 /// Tells the people responsible when a production goes overtime: still running
 /// <see cref="BookingWorkflow.OverrunThreshold"/> after its booked end. It goes to the
-/// supervisors of its crew divisions and its department's Production Manager, once per
+/// supervisors of its crew divisions, once per
 /// production. The API runs this every minute (see OvertimeWatcherService).
 /// </summary>
 /// <remarks>
@@ -29,15 +29,12 @@ public class OvertimeWatcher(PbrmsDbContext db, Notifier notifier)
         if (overtime.Count == 0)
             return;
 
-        var units = await db.OrgUnits.AsNoTracking().ToListAsync();
-
         foreach (var booking in overtime)
         {
             var supervisors = await notifier.PeopleWithRoleAsync(Role.Supervisor, booking.CrewSlots.Select(s => s.DivisionId));
-            var managers = await notifier.PeopleWithRoleAsync(Role.ProductionManager, OrgUnit.ChainUp(booking.DepartmentId, units));
 
             notifier.Send(
-                supervisors.Concat(managers),
+                supervisors,
                 $"#{booking.ProductionNo} {booking.Title} has gone overtime. It was booked to end at {NbcTime.Text(booking.EndsAt)}.",
                 booking.Id);
             booking.OvertimeNotifiedAt = now;

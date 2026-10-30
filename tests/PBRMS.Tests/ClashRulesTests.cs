@@ -35,6 +35,17 @@ public class ClashRulesTests
         Assert.Equal(canClash, ClashRules.VenueCanClash(venue));
     }
 
+    [Theory]
+    [InlineData(Venue.Studio1, Venue.Location, BookingStatus.Confirmed, true)]      // studio over outside
+    [InlineData(Venue.Studio1, Venue.Ob, BookingStatus.CrewAssignment, true)]
+    [InlineData(Venue.Studio1, Venue.Location, BookingStatus.InProgress, false)]    // it's already running
+    [InlineData(Venue.Studio1, Venue.Studio2, BookingStatus.Confirmed, false)]      // studios don't take from each other
+    [InlineData(Venue.Location, Venue.Studio1, BookingStatus.Confirmed, false)]     // outside never takes from a studio
+    public void A_studio_takes_precedence_over_an_outside_production_that_hasnt_started(Venue wanted, Venue other, BookingStatus status, bool takes)
+    {
+        Assert.Equal(takes, ClashRules.StudioTakesPrecedence(wanted, other, status));
+    }
+
     [Fact]
     public void Drafts_and_cancelled_bookings_do_not_hold_crew()
     {

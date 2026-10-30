@@ -40,7 +40,7 @@ public static class BookingQueryEndpoints
     }
 
     /// <summary>
-    /// Bookings waiting for the signed-in person to approve or send back, soonest first.
+    /// Bookings waiting for the signed-in person to approve or send back: studios first, then soonest first.
     /// It uses the same <see cref="BookingWorkflow.MayTake"/> rule as the transition
     /// endpoint, so a booking is in someone's queue exactly when they are allowed to act on it.
     /// </summary>
@@ -69,6 +69,8 @@ public static class BookingQueryEndpoints
             .Where(b => BookingWorkflow.Steps.Any(step =>
                 step.From == b.Status &&
                 BookingWorkflow.MayTake(step, b, caller.UserId, caller.Roles, OrgUnit.ChainUp(b.DepartmentId, units))))
+            // Studios are filled first, so studio productions come top of the queue.
+            .OrderByDescending(b => ClashRules.IsStudio(b.Venue)).ThenBy(b => b.StartsAt)
             .Select(BookingResponse.From)
             .ToList();
     }

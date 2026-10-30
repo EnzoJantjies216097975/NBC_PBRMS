@@ -142,7 +142,9 @@ public static class RosterEndpoints
     /// A clash with a confirmed booking doesn't stop it, because someone may really be
     /// on leave. It comes back as a warning so the supervisor can get the crew changed.
     /// </summary>
-    private static async Task<IResult> Publish(Guid divisionId, string month, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker, Notifier notifier)
+    private static async Task<IResult> Publish(
+        Guid divisionId, string month, ClaimsPrincipal principal, PbrmsDbContext db,
+        ClashChecker clashChecker, Notifier notifier, OffRosterLog offRosterLog)
     {
         if (ParseMonth(month) is not DateOnly first)
             return BadMonth();
@@ -154,6 +156,10 @@ public static class RosterEndpoints
             return Problems.Conflict("There is no draft to publish for this month.");
 
         var clashes = await clashChecker.ForRosterAsync(roster);
+
+        // Someone already on a confirmed booking is now working a day off: that counts for HR too.
+        foreach (var clash in clashes)
+            await offRosterLog.RecordIfNewAsync(clash, PbrmsClaims.UserIdOf(principal));
 
         roster.Status = RosterStatus.Published;
         roster.PublishedAt = DateTimeOffset.UtcNow;

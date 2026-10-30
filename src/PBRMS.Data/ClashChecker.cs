@@ -21,14 +21,20 @@ public class ClashChecker(PbrmsDbContext db)
     /// </param>
     public async Task<List<Clash>> ForOperatorAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to, Booking? forBooking = null)
     {
-        var clashes = await OtherProductionsAsync(operatorId, from, to, forBooking?.Id);
+        var clashes = await OtherProductionsAsync(operatorId, from, to, forBooking);
         clashes.AddRange(await RosterClashesAsync(operatorId, from, to, forBooking));
         return clashes;
     }
 
-    private async Task<List<Clash>> OtherProductionsAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to, Guid? exceptBookingId)
+    /// <summary>
+    /// The other productions this operator is on. A studio production takes precedence, so
+    /// for a studio booking, an outside production is a warning rather than a clash.
+    /// </summary>
+    private async Task<List<Clash>> OtherProductionsAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to, Booking? forBooking)
     {
-        return await db.CrewAssignments
+        var exceptBookingId = forBooking?.Id;
+
+        var jobs = await db.CrewAssignments
             .AsNoTracking()
             .Where(a => a.OperatorId == operatorId
                         && a.RemovedAt == null
@@ -36,13 +42,47 @@ public class ClashChecker(PbrmsDbContext db)
                         && ClashRules.StatusesHoldingCrew.Contains(a.CrewSlot.Booking.Status)
                         // Same as ClashRules.Overlaps, written out so SQL Server can run it.
                         && a.CrewSlot.StartsAt < to && from < a.CrewSlot.EndsAt)
-            .Select(a => new Clash(
-                ClashKind.Operator,
-                a.Operator.FirstName + " " + a.Operator.Surname,
+            .Select(a => new
+            {
+                a.Id,
+                Name = a.Operator.FirstName + " " + a.Operator.Surname,
                 a.CrewSlot.Booking.ProductionNo,
                 a.CrewSlot.Booking.Title,
                 a.CrewSlot.StartsAt,
-                a.CrewSlot.EndsAt))
+                a.CrewSlot.EndsAt,
+                a.CrewSlot.Booking.Venue,
+                a.CrewSlot.Booking.Status
+            })
+            .ToListAsync();
+
+        return jobs
+            .Select(job =>
+            {
+                var studioWins = forBooking is not null && ClashRules.StudioTakesPrecedence(forBooking.Venue, job.Venue, job.Status);
+                var kind = studioWins ? ClashKind.TakeFromOutside : ClashKind.Operator;
+                return new Clash(kind, job.Name, job.ProductionNo, job.Title, job.StartsAt, job.EndsAt, job.Id);
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Studios are filled first. When crewing an outside production, this lists studio
+    /// productions at that time still waiting for someone from the same division.
+    /// </summary>
+    public async Task<List<Clash>> StudiosNeedingCrewAsync(Booking booking, CrewSlot slot)
+    {
+        if (ClashRules.IsStudio(booking.Venue))
+            return [];
+
+        return await db.CrewSlots
+            .AsNoTracking()
+            .Where(s => s.DivisionId == slot.DivisionId
+                        && s.Booking.Status == BookingStatus.CrewAssignment
+                        && ClashRules.Studios.Contains(s.Booking.Venue)
+                        && !s.Assignments.Any(a => a.RemovedAt == null)
+                        // Same as ClashRules.Overlaps, written out so SQL Server can run it.
+                        && s.StartsAt < slot.EndsAt && slot.StartsAt < s.EndsAt)
+            .Select(s => new Clash(ClashKind.StudioNeedsCrew, s.PositionLabel, s.Booking.ProductionNo, s.Booking.Title, s.StartsAt, s.EndsAt, null))
             .ToListAsync();
     }
 
@@ -128,6 +168,7 @@ public class ClashChecker(PbrmsDbContext db)
                         && a.CrewSlot.StartsAt < monthEnd && monthStart < a.CrewSlot.EndsAt)
             .Select(a => new
             {
+                a.Id,
                 a.OperatorId,
                 Name = a.Operator.FirstName + " " + a.Operator.Surname,
                 a.CrewSlot.StartsAt,
@@ -152,7 +193,7 @@ public class ClashChecker(PbrmsDbContext db)
 
                 var finding = RosterRules.Check(ShiftsIn(entry.ShiftCode, legend), day, job.StartsAt, job.EndsAt, job.IsTrip, job.Venue);
                 if (finding is not null)
-                    clashes.Add(new Clash(finding.Kind, job.Name, job.ProductionNo, $"{job.Title}: {finding.Reason}", job.StartsAt, job.EndsAt));
+                    clashes.Add(new Clash(finding.Kind, job.Name, job.ProductionNo, $"{job.Title}: {finding.Reason}", job.StartsAt, job.EndsAt, job.Id));
             }
         }
 
@@ -179,7 +220,7 @@ public class ClashChecker(PbrmsDbContext db)
                         && ClashRules.StatusesHoldingVenue.Contains(b.Status)
                         // Same as ClashRules.Overlaps, written out so SQL Server can run it.
                         && b.StartsAt < booking.EndsAt && booking.StartsAt < b.EndsAt)
-            .Select(b => new Clash(ClashKind.Venue, booking.Venue.ToString(), b.ProductionNo, b.Title, b.StartsAt, b.EndsAt))
+            .Select(b => new Clash(ClashKind.Venue, booking.Venue.ToString(), b.ProductionNo, b.Title, b.StartsAt, b.EndsAt, null))
             .ToListAsync();
     }
 
@@ -192,7 +233,13 @@ public class ClashChecker(PbrmsDbContext db)
         var clashes = await ForVenueAsync(booking);
 
         foreach (var slot in booking.CrewSlots.Where(s => s.Current is not null))
-            clashes.AddRange(await ForOperatorAsync(slot.Current!.OperatorId, slot.StartsAt, slot.EndsAt, booking));
+        {
+            var current = slot.Current!;
+            var found = await ForOperatorAsync(current.OperatorId, slot.StartsAt, slot.EndsAt, booking);
+
+            // Roster findings are about this assignment; other productions point to their own.
+            clashes.AddRange(found.Select(c => ClashRules.IsOffRoster(c.Kind) ? c with { AssignmentId = current.Id } : c));
+        }
 
         return clashes.Distinct().ToList();
     }

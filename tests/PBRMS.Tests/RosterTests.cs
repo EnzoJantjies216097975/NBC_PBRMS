@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using PBRMS.Domain;
+using static PBRMS.Api.Endpoints.OffRosterEndpoints;
 using static PBRMS.Api.Endpoints.RosterEndpoints;
 using static PBRMS.Api.Endpoints.ShiftDefinitionEndpoints;
 using static PBRMS.Tests.TestSteps;
@@ -99,12 +100,12 @@ public class RosterTests(TestApi api)
         var studio = await api.AtCrewStageAsync(StartOn(month, 6), Venue.Studio1, "Camera");
         var trip = await api.AtCrewStageAsync(StartOn(month, 6), Venue.Location, isTrip: true, "Camera");
 
-        Assert.Equal(HttpStatusCode.Conflict, (await api.AssignAsync(Supervisor, studio, "Camera", op)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(Supervisor, trip, "Camera", op)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await api.AssignAsync(Supervisor, studio, "Camera", op, acknowledge: true)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(Supervisor, trip, "Camera", op, acknowledge: true)).StatusCode);
     }
 
     [Fact]
-    public async Task A_booking_entirely_outside_the_operators_shift_is_refused()
+    public async Task Booking_someone_outside_their_shift_is_a_warning_and_is_logged_for_the_manager_and_HR()
     {
         var month = NewMonth();
         var op = await api.NewOperatorAsync("Camera");
@@ -112,10 +113,85 @@ public class RosterTests(TestApi api)
         await PublishOkAsync(month);
         var evening = await api.AtCrewStageAsync(StartOn(month, 7).AddHours(9), Venue.Studio1, "Camera"); // 19h00
 
-        var response = await api.AssignAsync(Supervisor, evening, "Camera", op);
+        var warned = await api.AssignAsync(Supervisor, evening, "Camera", op);
+        Assert.Contains("needsAcknowledgement", await warned.Content.ReadAsStringAsync());
+        Assert.Contains("Not on shift", await warned.Content.ReadAsStringAsync());
+        Assert.Empty(await LoggedAsync("hr@pbrms.test", month, op));
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Contains("Not on shift", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(Supervisor, evening, "Camera", op, acknowledge: true)).StatusCode);
+
+        var logged = Assert.Single(await LoggedAsync("hr@pbrms.test", month, op));
+        Assert.Equal((ClashKind.OutsideShift, evening.ProductionNo), (logged.Kind, logged.ProductionNo));
+        Assert.Single(await LoggedAsync("tvops.manager@pbrms.test", month, op));
+        Assert.Single(await LoggedAsync(Supervisor, month, op));
+
+        Assert.Contains(await api.NotificationsAsync(OperatorEmail(op)), n => n.Text.Contains("outside your shift"));
+        Assert.Contains(await api.NotificationsAsync("tvops.manager@pbrms.test"), n => n.BookingId == evening.Id);
+    }
+
+    [Fact]
+    public async Task A_call_in_is_logged_but_not_shown_to_another_divisions_supervisor_or_to_operators()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 17), "O"));
+        await PublishOkAsync(month);
+        var booking = await api.AtCrewStageAsync(StartOn(month, 17), Venue.Studio1, "Camera");
+
+        await api.AssignAsync(Supervisor, booking, "Camera", op, acknowledge: true);
+
+        Assert.Equal(ClashKind.CallIn, Assert.Single(await LoggedAsync(Supervisor, month, op)).Kind);
+        Assert.Empty(await LoggedAsync("supervisor.sound@pbrms.test", month, op));
+
+        var operatorClient = await api.SignedInClientAsync(OperatorEmail(op));
+        var response = await operatorClient.GetAsync(ReportUrl(month));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Someone_replaced_before_the_day_drops_out_of_the_report()
+    {
+        var month = NewMonth();
+        var (calledIn, replacement) = (await api.NewOperatorAsync("Camera"), await api.NewOperatorAsync("Camera"));
+        await SaveCellsOkAsync(month, new RosterCell(calledIn, DayOf(month, 18), "O"));
+        await PublishOkAsync(month);
+        var booking = await api.AtCrewStageAsync(StartOn(month, 18), Venue.Studio1, "Camera");
+        await api.AssignAsync(Supervisor, booking, "Camera", calledIn, acknowledge: true);
+
+        await api.AssignOkAsync(Supervisor, booking, "Camera", replacement);
+
+        Assert.Empty(await LoggedAsync("hr@pbrms.test", month, calledIn));
+    }
+
+    [Fact]
+    public async Task A_day_off_that_appears_after_assigning_is_logged_when_the_booking_officer_confirms()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        var booking = await api.AtCrewStageAsync(StartOn(month, 19), Venue.Studio1, "Camera");
+        await api.AssignOkAsync(Supervisor, booking, "Camera", op);
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 19), "O"));
+        await PublishOkAsync(month);
+        var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
+
+        await bookingOfficer.PostAsJsonAsync($"/bookings/{booking.Id}/transition", new { action = "Approve", acknowledgeWarnings = true }, Json);
+
+        Assert.Single(await LoggedAsync("hr@pbrms.test", month, op));
+    }
+
+    [Fact]
+    public async Task A_roster_that_gives_a_confirmed_operator_a_day_off_is_logged_when_published()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        var booking = await api.AtCrewStageAsync(StartOn(month, 20), Venue.Studio1, "Camera");
+        await api.AssignOkAsync(Supervisor, booking, "Camera", op);
+        await api.TransitionAsync("booking@pbrms.test", booking.Id, BookingAction.Approve);
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 20), "O"));
+
+        await PublishOkAsync(month);
+
+        Assert.Single(await LoggedAsync("hr@pbrms.test", month, op));
     }
 
     [Fact]
@@ -403,6 +479,17 @@ public class RosterTests(TestApi api)
     private static DateTimeOffset StartOn(DateTimeOffset month, int day) => month.AddDays(day - 1);
 
     private static string RosterUrl(Guid division, DateTimeOffset month) => $"/rosters/{division}/{month:yyyy-MM}";
+
+    private static string ReportUrl(DateTimeOffset month) =>
+        $"/reports/off-roster-work?from={month:yyyy-MM}-01&to={month.AddMonths(1).AddDays(-1):yyyy-MM-dd}";
+
+    /// <summary>What this person sees in the off-roster report for this operator and month.</summary>
+    private async Task<List<OffRosterResponse>> LoggedAsync(string email, DateTimeOffset month, Guid operatorId)
+    {
+        var client = await api.SignedInClientAsync(email);
+        var rows = await client.GetFromJsonAsync<List<OffRosterResponse>>(ReportUrl(month), Json);
+        return rows!.Where(r => r.OperatorId == operatorId).ToList();
+    }
 
     /// <summary>Saves cells on the Camera roster as the Camera supervisor.</summary>
     private async Task<HttpResponseMessage> SaveCellsAsync(DateTimeOffset month, params RosterCell[] cells)

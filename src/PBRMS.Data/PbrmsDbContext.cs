@@ -23,6 +23,7 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
     public DbSet<MonthlyRoster> MonthlyRosters => Set<MonthlyRoster>();
     public DbSet<RosterEntry> RosterEntries => Set<RosterEntry>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<OffRosterWork> OffRosterWork => Set<OffRosterWork>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -176,6 +177,18 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
 
             // For showing someone their newest notifications.
             notification.HasIndex(n => new { n.UserId, n.CreatedAt });
+        });
+
+        modelBuilder.Entity<OffRosterWork>(work =>
+        {
+            work.Property(w => w.Reason).HasMaxLength(500);
+
+            // Restrict: this is an HR record, so the assignment behind it can't be deleted.
+            work.HasOne(w => w.CrewAssignment).WithMany().HasForeignKey(w => w.CrewAssignmentId).OnDelete(DeleteBehavior.Restrict);
+            work.HasOne(w => w.RecordedBy).WithMany().HasForeignKey(w => w.RecordedById).OnDelete(DeleteBehavior.Restrict);
+
+            // Recorded once, however many times the warning is acknowledged.
+            work.HasIndex(w => new { w.CrewAssignmentId, w.Kind }).IsUnique();
         });
     }
 }

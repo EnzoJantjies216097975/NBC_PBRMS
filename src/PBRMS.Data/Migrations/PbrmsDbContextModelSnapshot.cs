@@ -313,6 +313,41 @@ namespace PBRMS.Data.Migrations
                     b.ToTable("Notifications");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.OffRosterWork", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CrewAssignmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RecordedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecordedById");
+
+                    b.HasIndex("CrewAssignmentId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("OffRosterWork");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.OrgUnit", b =>
                 {
                     b.Property<Guid>("Id")
@@ -615,6 +650,25 @@ namespace PBRMS.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.OffRosterWork", b =>
+                {
+                    b.HasOne("PBRMS.Domain.CrewAssignment", "CrewAssignment")
+                        .WithMany()
+                        .HasForeignKey("CrewAssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PBRMS.Domain.User", "RecordedBy")
+                        .WithMany()
+                        .HasForeignKey("RecordedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CrewAssignment");
+
+                    b.Navigation("RecordedBy");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.OrgUnit", b =>
