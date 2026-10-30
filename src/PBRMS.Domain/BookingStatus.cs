@@ -6,22 +6,21 @@ namespace PBRMS.Domain;
 /// Source: App Flow Document, "Booking states".
 /// </summary>
 /// <remarks>
-/// The App Flow Document lists "Submitted" and "PM review" as separate states. Both
-/// mean "waiting for the Production Manager", so they are one status here: submitting
-/// a draft puts it straight into <see cref="PmReview"/>.
+/// The App Flow Document also has "Submitted" and "PM review" states. NBC has no Production
+/// Managers, so submitting a draft puts it straight into <see cref="EpReview"/>.
 /// </remarks>
 public enum BookingStatus
 {
     /// <summary>Being filled in by the producer, or sent back to them to fix.</summary>
     Draft,
 
-    /// <summary>Waiting for the department's Production Manager.</summary>
-    PmReview,
-
     /// <summary>Waiting for the department's Executive Producer, who checks air date and channel.</summary>
     EpReview,
 
-    /// <summary>Waiting for the supervisor of every division named in the crew positions to assign crew.</summary>
+    /// <summary>
+    /// With the supervisors and the Booking Officer at the same time, while crew is assigned.
+    /// Who leads depends on the venue: see <see cref="BookingWorkflow.CrewLead"/>.
+    /// </summary>
     CrewAssignment,
 
     /// <summary>Waiting for the Booking Officer to settle studios and times and resolve clashes.</summary>

@@ -47,7 +47,7 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `GET /bookings/mine` | Your bookings, as a producer |
 | `GET /bookings/queue` | Bookings waiting for you to approve or send back |
 | `POST /bookings/{id}/transition` | `{ "action": "...", "note": "..." }`. Actions: Submit, Approve, SendBack, Start, End, Cancel. |
-| `GET /reports/off-roster-work?from=&to=` | Who was booked on a day off or outside their shift. TV Operations Manager, HR, Management and Admin see everyone; supervisors see their own divisions. Add `divisionId=` for one division. |
+| `GET /reports/off-roster-work?from=&to=` | Who was booked on a day off or outside their shift. The TV Operations Manager, Management and Admin see everyone; supervisors see their own divisions. Add `divisionId=` for one division. |
 | `GET /notifications` | Your newest notifications |
 | `POST /notifications/{id}/read` | Mark one as read |
 | `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. Supervisors and the Booking Officer. Filling the last slot moves the booking on to Finalisation. On a confirmed booking it replaces the operator. |
@@ -69,7 +69,6 @@ Send every request except health and dev-login with `Authorization: Bearer <toke
 | Email | Role |
 | --- | --- |
 | `producer@` | Producer, News |
-| `pm@` | Production Manager, News |
 | `ep@` | Executive Producer, News |
 | `supervisor@` | Supervisor and Operator, Camera |
 | `supervisor.sound@` | Supervisor, Sound |
@@ -77,12 +76,22 @@ Send every request except health and dev-login with `Authorization: Bearer <toke
 | `camera@` | Operator, Camera |
 | `producer.sports@` | Producer, Sports |
 | `booking@`, `admin@`, `management@` | Booking Officer, Admin, Management (NBC-wide) |
-| `tvops.manager@`, `hr@` | TV Operations Manager, HR |
+| `tvops.manager@` | TV Operations Manager |
 | `former.staff@` | Has left; refused |
 
 If you change `DevSeed.cs`, drop the development database to pick up the change:
 `dotnet ef database drop --project src/PBRMS.Data --startup-project src/PBRMS.Api`.
 
+
+## How a booking moves
+
+Producer → Executive Producer → crew assignment → Booking Officer confirms → production day.
+
+After the EP approves, the booking goes to the supervisors and the Booking Officer at the
+same time, and both see it in their queues. The venue decides who leads on the crew:
+the Booking Officer for a studio production, the supervisors for anything outside. Either
+can assign crew. When every position is filled it moves on, and the Booking Officer
+confirms every booking.
 
 ## What the roster does to crew assignments
 
@@ -90,8 +99,8 @@ If you change `DevSeed.cs`, drop the development database to pick up the change:
 | --- | --- |
 | Leave | Refused, and it can't be overridden. Book someone else. |
 | Away (trip) | Refused, unless the booking is a trip. |
-| Not on shift at that time | A warning, logged for HR. Going ahead notifies the operator, the division's supervisors, the TV Operations Manager and the Booking Officer. |
-| Day off | The same: a warning, logged for HR, and the same people notified. |
+| Not on shift at that time | A warning, and logged. Going ahead notifies the operator, the division's supervisors, the TV Operations Manager and the Booking Officer. |
+| Day off | The same: a warning, logged, and the same people notified. |
 | Rostered to another studio | A warning. Going ahead tells the supervisors to sort out the cover. |
 | Rostered to a studio in use, booked on non-studio work | Refused: studio productions have priority. |
 | Rostered to an idle studio, booked on non-studio work | A warning, as above. |

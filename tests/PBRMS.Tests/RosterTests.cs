@@ -105,7 +105,7 @@ public class RosterTests(TestApi api)
     }
 
     [Fact]
-    public async Task Booking_someone_outside_their_shift_is_a_warning_and_is_logged_for_the_manager_and_HR()
+    public async Task Booking_someone_outside_their_shift_is_a_warning_and_is_logged_for_the_manager()
     {
         var month = NewMonth();
         var op = await api.NewOperatorAsync("Camera");
@@ -116,13 +116,12 @@ public class RosterTests(TestApi api)
         var warned = await api.AssignAsync(Supervisor, evening, "Camera", op);
         Assert.Contains("needsAcknowledgement", await warned.Content.ReadAsStringAsync());
         Assert.Contains("Not on shift", await warned.Content.ReadAsStringAsync());
-        Assert.Empty(await LoggedAsync("hr@pbrms.test", month, op));
+        Assert.Empty(await LoggedAsync("tvops.manager@pbrms.test", month, op));
 
         Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(Supervisor, evening, "Camera", op, acknowledge: true)).StatusCode);
 
-        var logged = Assert.Single(await LoggedAsync("hr@pbrms.test", month, op));
+        var logged = Assert.Single(await LoggedAsync("tvops.manager@pbrms.test", month, op));
         Assert.Equal((ClashKind.OutsideShift, evening.ProductionNo), (logged.Kind, logged.ProductionNo));
-        Assert.Single(await LoggedAsync("tvops.manager@pbrms.test", month, op));
         Assert.Single(await LoggedAsync(Supervisor, month, op));
 
         Assert.Contains(await api.NotificationsAsync(OperatorEmail(op)), n => n.Text.Contains("outside your shift"));
@@ -160,7 +159,7 @@ public class RosterTests(TestApi api)
 
         await api.AssignOkAsync(Supervisor, booking, "Camera", replacement);
 
-        Assert.Empty(await LoggedAsync("hr@pbrms.test", month, calledIn));
+        Assert.Empty(await LoggedAsync("tvops.manager@pbrms.test", month, calledIn));
     }
 
     [Fact]
@@ -176,7 +175,7 @@ public class RosterTests(TestApi api)
 
         await bookingOfficer.PostAsJsonAsync($"/bookings/{booking.Id}/transition", new { action = "Approve", acknowledgeWarnings = true }, Json);
 
-        Assert.Single(await LoggedAsync("hr@pbrms.test", month, op));
+        Assert.Single(await LoggedAsync("tvops.manager@pbrms.test", month, op));
     }
 
     [Fact]
@@ -191,7 +190,7 @@ public class RosterTests(TestApi api)
 
         await PublishOkAsync(month);
 
-        Assert.Single(await LoggedAsync("hr@pbrms.test", month, op));
+        Assert.Single(await LoggedAsync("tvops.manager@pbrms.test", month, op));
     }
 
     [Fact]

@@ -9,7 +9,6 @@ namespace PBRMS.Domain;
 public enum Role
 {
     Producer,
-    ProductionManager,
     ExecutiveProducer,
     Supervisor,
     BookingOfficer,
@@ -18,8 +17,5 @@ public enum Role
     Management,
 
     /// <summary>Runs TV Operations. Told about, and can see, work outside the roster.</summary>
-    TvOperationsManager,
-
-    /// <summary>Human Resources. Can see the log of work outside the roster.</summary>
-    Hr
+    TvOperationsManager
 }

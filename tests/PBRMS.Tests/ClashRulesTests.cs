@@ -57,7 +57,7 @@ public class ClashRulesTests
     [Fact]
     public void A_booking_still_being_approved_does_not_hold_a_studio()
     {
-        Assert.DoesNotContain(BookingStatus.PmReview, ClashRules.StatusesHoldingVenue);
+        Assert.DoesNotContain(BookingStatus.EpReview, ClashRules.StatusesHoldingVenue);
         Assert.Contains(BookingStatus.Finalisation, ClashRules.StatusesHoldingVenue);
     }
 }

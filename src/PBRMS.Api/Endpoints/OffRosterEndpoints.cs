@@ -8,8 +8,9 @@ namespace PBRMS.Api.Endpoints;
 
 /// <summary>
 /// GET /reports/off-roster-work: who was booked on a day off or outside their shift, for
-/// the TV Operations Manager and HR. Supervisors see their own divisions. Work that didn't
+/// the TV Operations Manager. Supervisors see their own divisions. Work that didn't
 /// end up happening (the operator was replaced, or the booking cancelled) is left out.
+/// The records are kept for HR too. HR has no report yet; it can be given access here later.
 /// </summary>
 public static class OffRosterEndpoints
 {
@@ -29,7 +30,7 @@ public static class OffRosterEndpoints
     public static void MapOffRosterEndpoints(this WebApplication app)
     {
         app.MapGet("/reports/off-roster-work", Report).RequireAuthorization(p => p.RequireRole(
-            nameof(Role.Supervisor), nameof(Role.TvOperationsManager), nameof(Role.Hr), nameof(Role.Management), nameof(Role.Admin)));
+            nameof(Role.Supervisor), nameof(Role.TvOperationsManager), nameof(Role.Management), nameof(Role.Admin)));
     }
 
     /// <param name="divisionId">Leave empty for every division the person can see.</param>
@@ -38,7 +39,7 @@ public static class OffRosterEndpoints
         var caller = await Caller.LoadAsync(principal, db);
 
         // Anyone who isn't only a supervisor sees all divisions.
-        var seesAll = caller.Holds(Role.TvOperationsManager, Role.Hr, Role.Management, Role.Admin)
+        var seesAll = caller.Holds(Role.TvOperationsManager, Role.Management, Role.Admin)
                       || caller.Roles.Any(r => r is { Role: Role.Supervisor, OrgUnitId: null });
         var ownDivisions = caller.Roles.Where(r => r.Role == Role.Supervisor && r.OrgUnitId is not null).Select(r => r.OrgUnitId!.Value).ToList();
 

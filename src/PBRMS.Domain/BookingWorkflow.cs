@@ -11,7 +11,7 @@ public enum BookingAction
 
     /// <summary>
     /// Send it back with a reason so it can be fixed. The App Flow Document has
-    /// different words for this at each stage (the PM "denies", the EP "returns", a
+    /// different words for this at each stage (the EP "returns", a
     /// supervisor "declines"), but it is the same action.
     /// </summary>
     SendBack,
@@ -39,7 +39,7 @@ public static class BookingWorkflow
     /// <summary>
     /// Every allowed move (Cancel is handled separately). A move that isn't listed
     /// isn't allowed.
-    /// Sending back: the PM and EP send it to the producer to fix (Draft); a
+    /// Sending back: the EP sends it to the producer to fix (Draft); a
     /// supervisor sends it back to the EP (App Flow Document, BR-07).
     /// </summary>
     /// <remarks>
@@ -50,10 +50,7 @@ public static class BookingWorkflow
     /// </remarks>
     public static readonly IReadOnlyList<Step> Steps =
     [
-        new(BookingStatus.Draft, BookingAction.Submit, Role.Producer, BookingStatus.PmReview),
-
-        new(BookingStatus.PmReview, BookingAction.Approve, Role.ProductionManager, BookingStatus.EpReview),
-        new(BookingStatus.PmReview, BookingAction.SendBack, Role.ProductionManager, BookingStatus.Draft),
+        new(BookingStatus.Draft, BookingAction.Submit, Role.Producer, BookingStatus.EpReview),
 
         new(BookingStatus.EpReview, BookingAction.Approve, Role.ExecutiveProducer, BookingStatus.CrewAssignment),
         new(BookingStatus.EpReview, BookingAction.SendBack, Role.ExecutiveProducer, BookingStatus.Draft),
@@ -74,7 +71,14 @@ public static class BookingWorkflow
 
     /// <summary>Besides the booking's own producer, these roles may cancel a booking.</summary>
     public static readonly IReadOnlyList<Role> CancelledBy =
-        [Role.ProductionManager, Role.ExecutiveProducer, Role.BookingOfficer, Role.Admin];
+        [Role.ExecutiveProducer, Role.BookingOfficer, Role.Admin];
+
+    /// <summary>
+    /// Who leads on crewing a booking. After the EP approves it goes to the supervisors and
+    /// the Booking Officer at the same time, and either can assign crew, but one is responsible:
+    /// the Booking Officer for a studio production, the supervisors for anything outside.
+    /// </summary>
+    public static Role CrewLead(Venue venue) => ClashRules.IsStudio(venue) ? Role.BookingOfficer : Role.Supervisor;
 
     /// <summary>The step for doing this action in this status, or null if it isn't allowed then.</summary>
     public static Step? FindStep(BookingStatus from, BookingAction action) =>
@@ -91,8 +95,9 @@ public static class BookingWorkflow
     /// May this user take this step on this booking? Holding the role is not enough;
     /// it has to be for this booking:
     /// - Producer: only the booking's own producer.
-    /// - Supervisor: supervisor of a division named in the booking's crew slots.
-    /// - Production Manager, Executive Producer: of the booking's department, or of a
+    /// - Supervisor: supervisor of a division named in the booking's crew slots, or the
+    ///   Booking Officer, because crew assignment goes to both at the same time.
+    /// - Executive Producer: of the booking's department, or of a
     ///   department above it (e.g. Content Hub over its sub-departments).
     /// A role held NBC-wide (no unit) covers every booking.
     /// </summary>
@@ -101,11 +106,11 @@ public static class BookingWorkflow
         step.ActedBy switch
         {
             Role.Producer => booking.ProducerId == userId,
-            Role.Supervisor => HoldsRoleIn(userRoles, Role.Supervisor, booking.CrewSlots.Select(s => s.DivisionId).ToHashSet()),
+            Role.Supervisor => booking.CrewSlots.Any(s => MayStaff(s.DivisionId, userRoles)),
             _ => HoldsRoleIn(userRoles, step.ActedBy, departmentChain)
         };
 
-    /// <summary>May this user cancel this booking? Its producer, the PM or EP of its department, the Booking Officer or an Admin.</summary>
+    /// <summary>May this user cancel this booking? Its producer, the EP of its department, the Booking Officer or an Admin.</summary>
     public static bool MayCancel(Booking booking, Guid userId, IEnumerable<RoleAssignment> userRoles, ISet<Guid> departmentChain) =>
         booking.ProducerId == userId
         || CancelledBy.Any(role => HoldsRoleIn(userRoles, role, departmentChain));

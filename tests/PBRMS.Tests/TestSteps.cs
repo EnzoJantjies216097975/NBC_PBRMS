@@ -9,7 +9,7 @@ namespace PBRMS.Tests;
 
 /// <summary>
 /// Steps shared by the API tests: making an operator nobody else uses, and getting a
-/// booking to a given stage of the approval chain. Sample people: News producer, PM and
+/// booking to a given stage of the approval chain. Sample people: News producer and
 /// EP; Camera and Sound supervisors; the Booking Officer.
 /// </summary>
 public static class TestSteps
@@ -55,7 +55,7 @@ public static class TestSteps
         return id;
     }
 
-    /// <summary>A two-hour News booking approved by the PM and EP, with one crew slot per division named.</summary>
+    /// <summary>A two-hour News booking approved by the EP, with one crew slot per division named.</summary>
     public static async Task<BookingResponse> AtCrewStageAsync(this TestApi api, DateTimeOffset start, Venue venue, params string[] divisions) =>
         await api.AtCrewStageAsync(start, venue, isTrip: false, divisions);
 
@@ -72,7 +72,6 @@ public static class TestSteps
         var booking = (await created.Content.ReadFromJsonAsync<BookingResponse>(Json))!;
 
         await api.TransitionAsync("producer@pbrms.test", booking.Id, BookingAction.Submit);
-        await api.TransitionAsync("pm@pbrms.test", booking.Id, BookingAction.Approve);
         return await api.TransitionAsync("ep@pbrms.test", booking.Id, BookingAction.Approve);
     }
 

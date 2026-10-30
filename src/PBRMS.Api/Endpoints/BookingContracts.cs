@@ -49,7 +49,7 @@ public record CrewChange(Guid SlotId, Guid? OperatorId);
 /// <summary>The Booking Officer's changes to where and when a booking happens.</summary>
 public record ScheduleRequest(Venue Venue, string? VenueText, DateTimeOffset CallAt, DateTimeOffset StartsAt, DateTimeOffset EndsAt);
 
-/// <summary>A booking as the apps see it, with its crew positions and history.</summary>
+/// <summary>A booking as the apps see it, with its crew positions and history. CrewLead says who leads while crew is being assigned.</summary>
 public record BookingResponse(
     Guid Id,
     int ProductionNo,
@@ -74,7 +74,8 @@ public record BookingResponse(
     string? AllocationCode,
     string? Notes,
     List<CrewSlotResponse> CrewSlots,
-    List<StatusChangeResponse> History)
+    List<StatusChangeResponse> History,
+    Role? CrewLead)
 {
     /// <summary>Builds the response from a booking loaded with <see cref="BookingQueries.WithDetails"/>.</summary>
     public static BookingResponse From(Booking b) => new(
@@ -96,7 +97,8 @@ public record BookingResponse(
         b.History
             .OrderBy(h => h.At)
             .Select(h => new StatusChangeResponse(h.FromStatus, h.ToStatus, $"{h.Actor.FirstName} {h.Actor.Surname}", h.Note, h.At))
-            .ToList());
+            .ToList(),
+        b.Status == BookingStatus.CrewAssignment ? BookingWorkflow.CrewLead(b.Venue) : null);
 }
 
 /// <summary>A crew position and who is on it. The operator fields are null while it is empty.</summary>

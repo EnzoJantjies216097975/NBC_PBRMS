@@ -10,7 +10,7 @@ namespace PBRMS.Tests;
 
 /// <summary>
 /// What happens once a booking is confirmed: who is told, replacing crew, the producer
-/// marking start and end, and the overtime alert. Sample people: News producer, PM and
+/// marking start and end, and the overtime alert. Sample people: News producer and
 /// EP; Camera supervisor; the Booking Officer.
 /// </summary>
 [Collection("API")]

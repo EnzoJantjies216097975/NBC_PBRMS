@@ -20,7 +20,7 @@ public class Booking
 
     public string Title { get; set; } = "";
 
-    /// <summary>The content department the production is for. Its PM and EP approve it.</summary>
+    /// <summary>The content department the production is for. Its EP approves it.</summary>
     public Guid DepartmentId { get; set; }
     public OrgUnit Department { get; set; } = null!;
 

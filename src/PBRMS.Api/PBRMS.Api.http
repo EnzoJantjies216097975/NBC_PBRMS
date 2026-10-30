@@ -11,10 +11,8 @@
 @api = http://localhost:5188
 @day = 2026-12-01
 
-
 ### Is the API up, and can it reach the database?
 GET {{api}}/health
-
 
 ### ---- Sign everyone in (Development only: no password) ----
 
@@ -24,13 +22,6 @@ POST {{api}}/auth/dev-login
 Content-Type: application/json
 
 { "email": "producer@pbrms.test" }
-
-### Production Manager
-# @name pm
-POST {{api}}/auth/dev-login
-Content-Type: application/json
-
-{ "email": "pm@pbrms.test" }
 
 ### Executive Producer
 # @name ep
@@ -53,17 +44,14 @@ Content-Type: application/json
 
 { "email": "booking@pbrms.test" }
 
-
 ### Who am I? Shows the supervisor's roles.
 GET {{api}}/me
 Authorization: Bearer {{supervisor.response.body.token}}
-
 
 ### Departments and divisions, sorted by name: Camera, News, Sound, Sports.
 # @name units
 GET {{api}}/org-units
 Authorization: Bearer {{producer.response.body.token}}
-
 
 ### ---- The approval chain ----
 
@@ -86,30 +74,27 @@ Content-Type: application/json
   ]
 }
 
-### 2. The producer submits it. Status: PmReview.
+### 2. The producer submits it. There is no Production Manager, so it goes straight to the EP. Status: EpReview.
 POST {{api}}/bookings/{{booking.response.body.id}}/transition
 Authorization: Bearer {{producer.response.body.token}}
 Content-Type: application/json
 
 { "action": "Submit" }
 
-### 3. It's in the Production Manager's queue.
+### 3. It's in the Executive Producer's queue.
 GET {{api}}/bookings/queue
-Authorization: Bearer {{pm.response.body.token}}
+Authorization: Bearer {{ep.response.body.token}}
 
-### 4. The Production Manager approves. Status: EpReview.
-POST {{api}}/bookings/{{booking.response.body.id}}/transition
-Authorization: Bearer {{pm.response.body.token}}
-Content-Type: application/json
-
-{ "action": "Approve", "note": "Looks fine" }
-
-### 5. The Executive Producer approves and sets the channel. Status: CrewAssignment.
+### 4. The Executive Producer approves and sets the channel. Status: CrewAssignment. It's a studio production, so "crewLead" is BookingOfficer.
 POST {{api}}/bookings/{{booking.response.body.id}}/transition
 Authorization: Bearer {{ep.response.body.token}}
 Content-Type: application/json
 
 { "action": "Approve", "channel": "Nbc1" }
+
+### 5. It has gone to the Booking Officer and the supervisors at the same time. Here's the Booking Officer's queue.
+GET {{api}}/bookings/queue
+Authorization: Bearer {{bookingOfficer.response.body.token}}
 
 ### 6. The supervisor opens the crew picker: Camera's operators.
 # @name operators
@@ -142,7 +127,6 @@ Content-Type: application/json
 GET {{api}}/bookings/{{booking.response.body.id}}
 Authorization: Bearer {{producer.response.body.token}}
 
-
 ### ---- Things that must be refused ----
 
 ### Approving a booking that is already confirmed. Answer: 409, with the reason.
@@ -169,7 +153,6 @@ Content-Type: application/json
 
 ### No token. Answer: 401.
 GET {{api}}/me
-
 
 ### ---- Monthly roster (needs the sign-ins and "units" above, and step 6) ----
 # Use a month with no bookings yet. Change @month to start a fresh roster.
@@ -212,7 +195,6 @@ Authorization: Bearer {{supervisor.response.body.token}}
 GET {{api}}/operators/{{operators.response.body.$[0].id}}/conflicts?from={{month}}-02T19:00:00%2B02:00&to={{month}}-02T21:00:00%2B02:00
 Authorization: Bearer {{supervisor.response.body.token}}
 
-
 ### ---- Warnings and notifications (needs the sign-ins, "units" and step 6 above) ----
 # Uses @month and the operator from the roster steps. Send R1 and R3 first.
 # In that roster the operator is on leave on the 1st, and has an A1 shift on the 2nd.
@@ -249,23 +231,22 @@ Content-Type: application/json
 { "action": "Start" }
 
 ### W7. ...and as ended. If it runs 30 minutes past its booked end before this, the
-# supervisors and the Production Manager are told automatically.
+# supervisors are told automatically.
 POST {{api}}/bookings/{{booking.response.body.id}}/transition
 Authorization: Bearer {{producer.response.body.token}}
 Content-Type: application/json
 
 { "action": "End" }
 
+### ---- Report for the TV Operations Manager ----
 
-### ---- Report for the TV Operations Manager and HR ----
-
-### Sign in as HR
-# @name hr
+### Sign in as the TV Operations Manager
+# @name manager
 POST {{api}}/auth/dev-login
 Content-Type: application/json
 
-{ "email": "hr@pbrms.test" }
+{ "email": "tvops.manager@pbrms.test" }
 
 ### Who was booked on a day off or outside their shift this month (@month from the roster steps).
 GET {{api}}/reports/off-roster-work?from={{month}}-01&to={{month}}-28
-Authorization: Bearer {{hr.response.body.token}}
+Authorization: Bearer {{manager.response.body.token}}

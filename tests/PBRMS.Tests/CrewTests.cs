@@ -12,7 +12,7 @@ namespace PBRMS.Tests;
 /// is BR-06: nobody and no studio can be double-booked on a confirmed booking.
 ///
 /// Every test uses its own new operators and its own day, so tests can't clash with
-/// each other. Sample people: News producer, PM and EP; Camera and Sound supervisors;
+/// each other. Sample people: News producer and EP; Camera and Sound supervisors;
 /// the Booking Officer.
 /// </summary>
 [Collection("API")]

@@ -37,15 +37,15 @@ public class BookingWorkflowTests
     }
 
     [Fact]
-    public void A_PM_of_a_department_covers_its_sub_departments()
+    public void An_EP_of_a_department_covers_its_sub_departments()
     {
-        Assert.True(MayTake(BookingStatus.PmReview, BookingAction.Approve, Guid.NewGuid(), Holds(Role.ProductionManager, ContentHub)));
+        Assert.True(MayTake(BookingStatus.EpReview, BookingAction.Approve, Guid.NewGuid(), Holds(Role.ExecutiveProducer, ContentHub)));
     }
 
     [Fact]
-    public void A_PM_of_another_department_may_not_approve()
+    public void An_EP_of_another_department_may_not_approve()
     {
-        Assert.False(MayTake(BookingStatus.PmReview, BookingAction.Approve, Guid.NewGuid(), Holds(Role.ProductionManager, News)));
+        Assert.False(MayTake(BookingStatus.EpReview, BookingAction.Approve, Guid.NewGuid(), Holds(Role.ExecutiveProducer, News)));
     }
 
     [Fact]
@@ -69,9 +69,8 @@ public class BookingWorkflowTests
     }
 
     [Fact]
-    public void Sending_back_returns_to_the_producer_from_PM_and_EP_but_to_the_EP_from_supervisors()
+    public void Sending_back_returns_to_the_producer_from_the_EP_but_to_the_EP_from_supervisors()
     {
-        Assert.Equal(BookingStatus.Draft, BookingWorkflow.FindStep(BookingStatus.PmReview, BookingAction.SendBack)!.To);
         Assert.Equal(BookingStatus.Draft, BookingWorkflow.FindStep(BookingStatus.EpReview, BookingAction.SendBack)!.To);
         Assert.Equal(BookingStatus.EpReview, BookingWorkflow.FindStep(BookingStatus.CrewAssignment, BookingAction.SendBack)!.To);
     }

@@ -60,8 +60,7 @@ public static class DevSeed
     {
         User[] people =
         [
-            Person("Test", "TvOperationsManager", "tvops.manager@pbrms.test", (Role.TvOperationsManager, null)),
-            Person("Test", "Hr", "hr@pbrms.test", (Role.Hr, null))
+            Person("Test", "TvOperationsManager", "tvops.manager@pbrms.test", (Role.TvOperationsManager, null))
         ];
 
         foreach (var person in people)
@@ -91,7 +90,6 @@ public static class DevSeed
         // Sign in as any of them with POST /auth/dev-login.
         db.Users.AddRange(
             Person("Test", "Producer", "producer@pbrms.test", (Role.Producer, news)),
-            Person("Test", "ProductionManager", "pm@pbrms.test", (Role.ProductionManager, news)),
             Person("Test", "ExecutiveProducer", "ep@pbrms.test", (Role.ExecutiveProducer, news)),
             Person("Test", "Supervisor", "supervisor@pbrms.test", (Role.Supervisor, camera), (Role.Operator, camera)),
             Person("Test", "SoundSupervisor", "supervisor.sound@pbrms.test", (Role.Supervisor, sound)),
