@@ -8,7 +8,9 @@ public class RosterRulesTests
     private static readonly DateOnly Monday = new(2031, 3, 3);
 
     private static readonly ShiftDefinition Off = new() { Code = "O", Label = "Off", Kind = ShiftKind.Off };
+    private static readonly ShiftDefinition Leave = new() { Code = "L", Label = "Leave", Kind = ShiftKind.Leave };
     private static readonly ShiftDefinition Trip = new() { Code = "TR", Label = "Trip", Kind = ShiftKind.Away };
+    private static readonly ShiftDefinition StudioOne = new() { Code = "ST1", Label = "Studio 1", Kind = ShiftKind.Worked, Studio = Venue.Studio1, Start = new(13, 0), End = new(21, 0) };
     private static readonly ShiftDefinition Open = new() { Code = "OB", Label = "Outside broadcast", Kind = ShiftKind.Worked };
     private static readonly ShiftDefinition Day = new() { Code = "A1", Label = "Any", Kind = ShiftKind.Worked, Start = new(8, 0), End = new(17, 0) };
     private static readonly ShiftDefinition Night = new() { Code = "N", Label = "Night", Kind = ShiftKind.Worked, Start = new(19, 0), End = new(2, 0) };
@@ -21,7 +23,7 @@ public class RosterRulesTests
     private static DateTimeOffset At(int hour) => NbcTime.At(Monday, new(hour, 0));
 
     private static string? Reason(int fromHour, int toHour, bool forTrip, params ShiftDefinition[] shifts) =>
-        RosterRules.ClashReason(shifts, Monday, At(fromHour), At(toHour), forTrip);
+        RosterRules.Check(shifts, Monday, At(fromHour), At(toHour), forTrip)?.Reason;
 
     [Fact]
     public void A_blank_cell_is_never_a_clash()
@@ -30,15 +32,41 @@ public class RosterRulesTests
     }
 
     [Fact]
-    public void Off_is_a_clash()
+    public void A_day_off_is_a_warning_because_they_can_be_called_in()
     {
-        Assert.Contains("Off", Reason(9, 11, false, Off));
+        var finding = RosterRules.Check([Off], Monday, At(9), At(11), false);
+
+        Assert.Equal(ClashKind.CallIn, finding!.Kind);
+        Assert.True(new Clash(finding.Kind, "", null, "", At(9), At(11)).IsWarning);
     }
 
     [Fact]
     public void Half_a_day_off_is_still_a_working_day()
     {
         Assert.Null(Reason(9, 11, false, Off, Day));
+    }
+
+    [Fact]
+    public void Leave_is_not_a_warning_and_outranks_a_day_off()
+    {
+        var finding = RosterRules.Check([Off, Leave], Monday, At(9), At(11), false);
+
+        Assert.Equal(ClashKind.OnLeave, finding!.Kind);
+        Assert.False(new Clash(finding.Kind, "", null, "", At(9), At(11)).IsWarning);
+    }
+
+    [Fact]
+    public void Rostered_to_a_studio_and_booked_in_another_is_a_warning()
+    {
+        Assert.Equal(ClashKind.RosteredElsewhere, RosterRules.Check([StudioOne], Monday, At(14), At(16), false, Venue.Studio2)!.Kind);
+        Assert.Null(RosterRules.Check([StudioOne], Monday, At(14), At(16), false, Venue.Studio1));
+    }
+
+    [Fact]
+    public void A_studio_shift_that_doesnt_touch_the_booking_doesnt_tie_them_to_it()
+    {
+        // A1 covers the morning booking. The Studio 1 shift only starts at 13h00.
+        Assert.Null(RosterRules.Check([Day, StudioOne], Monday, At(9), At(11), false, Venue.Studio2));
     }
 
     [Fact]
@@ -91,7 +119,7 @@ public class RosterRulesTests
     {
         var (from, to) = (NbcTime.At(Monday.AddDays(1), new(0, 30)), NbcTime.At(Monday.AddDays(1), new(1, 30)));
 
-        Assert.Null(RosterRules.ClashReason([Night], Monday, from, to, false));
+        Assert.Null(RosterRules.Check([Night], Monday, from, to, false));
     }
 
     [Fact]

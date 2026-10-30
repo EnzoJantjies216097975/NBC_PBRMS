@@ -22,6 +22,7 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
     public DbSet<ShiftDefinition> ShiftDefinitions => Set<ShiftDefinition>();
     public DbSet<MonthlyRoster> MonthlyRosters => Set<MonthlyRoster>();
     public DbSet<RosterEntry> RosterEntries => Set<RosterEntry>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -165,6 +166,16 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
 
             // For schedules and the clash check (Backend Schema Document, "Key indexes").
             entry.HasIndex(e => new { e.OperatorId, e.Date });
+        });
+
+        modelBuilder.Entity<Notification>(notification =>
+        {
+            notification.Property(n => n.Text).HasMaxLength(500);
+            notification.HasOne(n => n.User).WithMany().HasForeignKey(n => n.UserId).OnDelete(DeleteBehavior.Restrict);
+            notification.HasOne<Booking>().WithMany().HasForeignKey(n => n.BookingId).OnDelete(DeleteBehavior.Restrict);
+
+            // For showing someone their newest notifications.
+            notification.HasIndex(n => new { n.UserId, n.CreatedAt });
         });
     }
 }

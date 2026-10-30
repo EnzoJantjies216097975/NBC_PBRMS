@@ -7,8 +7,8 @@ using PBRMS.Domain;
 namespace PBRMS.Api.Endpoints;
 
 /// <summary>
-/// POST /bookings/{id}/transition: move a booking along the approval chain (submit,
-/// approve, send back, cancel). The rules for who may do what are in
+/// POST /bookings/{id}/transition: move a booking along (submit, approve, send back,
+/// start, end, cancel). The rules for who may do what are in
 /// <see cref="BookingWorkflow"/>; this endpoint applies them and records the change.
 /// </summary>
 public static class BookingTransitionEndpoints
@@ -18,7 +18,7 @@ public static class BookingTransitionEndpoints
         app.MapPost("/bookings/{id:guid}/transition", Transition).RequireAuthorization();
     }
 
-    private static async Task<IResult> Transition(Guid id, TransitionRequest request, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker)
+    private static async Task<IResult> Transition(Guid id, TransitionRequest request, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker, Notifier notifier)
     {
         // One transaction, so the clash check and the confirmation stand or fall together (TR-02).
         await using var transaction = await db.Database.BeginTransactionAsync();
@@ -30,7 +30,8 @@ public static class BookingTransitionEndpoints
             return Results.NotFound();
 
         var caller = await Caller.LoadAsync(principal, db);
-        var departmentChain = OrgUnit.ChainUp(booking.DepartmentId, await db.OrgUnits.AsNoTracking().ToListAsync());
+        var units = await db.OrgUnits.AsNoTracking().ToListAsync();
+        var departmentChain = OrgUnit.ChainUp(booking.DepartmentId, units);
 
         // 1. Is this move allowed at this stage, and by this person?
         BookingStatus newStatus;
@@ -57,6 +58,7 @@ public static class BookingTransitionEndpoints
 
             // A booking can't be confirmed with an unresolved clash (BR-06, TR-02). The locks
             // make sure nobody takes this crew or studio between the check and the save.
+            // Warnings don't block, but the Booking Officer must see them first.
             if (step.To == BookingStatus.Confirmed)
             {
                 if (booking.CrewSlots.Any(s => s.Current is null))
@@ -64,8 +66,12 @@ public static class BookingTransitionEndpoints
 
                 await ClashLocks.TakeAsync(db, ClashLocks.ForBooking(booking));
                 var clashes = await clashChecker.ForBookingAsync(booking);
-                if (clashes.Count > 0)
-                    return Problems.Clashes("This booking still has clashes to resolve.", clashes);
+
+                var blocking = clashes.Where(c => !c.IsWarning).ToList();
+                if (blocking.Count > 0)
+                    return Problems.Clashes("This booking still has clashes to resolve.", blocking);
+                if (clashes.Count > 0 && !request.AcknowledgeWarnings)
+                    return Problems.Warnings("Check these before confirming.", clashes);
             }
 
             newStatus = step.To;
@@ -78,11 +84,22 @@ public static class BookingTransitionEndpoints
         if (note?.Length > 1000)
             return Problems.Invalid("note", "Keep the note to 1000 characters.");
 
-        // 3. The EP checks the air date and channel when approving (App Flow Document, step 3).
-        if (booking.Status == BookingStatus.EpReview && request.Action == BookingAction.Approve)
+        var now = DateTimeOffset.UtcNow;
+
+        // 3. What this particular step records.
+        switch (request.Action)
         {
-            booking.Channel = request.Channel ?? booking.Channel;
-            booking.AirAt = request.AirAt ?? booking.AirAt;
+            // The EP checks the air date and channel when approving (App Flow Document, step 3).
+            case BookingAction.Approve when booking.Status == BookingStatus.EpReview:
+                booking.Channel = request.Channel ?? booking.Channel;
+                booking.AirAt = request.AirAt ?? booking.AirAt;
+                break;
+            case BookingAction.Start:
+                booking.ActualStartAt = now;
+                break;
+            case BookingAction.End:
+                booking.ActualEndAt = now;
+                break;
         }
 
         // 4. Record the change and save. Every change goes into the history (TR-03).
@@ -92,9 +109,20 @@ public static class BookingTransitionEndpoints
             ToStatus = newStatus,
             ActorId = caller.UserId,
             Note = string.IsNullOrEmpty(note) ? null : note,
-            At = DateTimeOffset.UtcNow
+            At = now
         });
         booking.Status = newStatus;
+
+        // Confirmed: producer, EP and every assigned operator are told (App Flow Document, step 6).
+        if (newStatus == BookingStatus.Confirmed)
+        {
+            var eps = await notifier.PeopleWithRoleAsync(Role.ExecutiveProducer, departmentChain);
+            var crew = booking.CrewSlots.Select(s => s.Current!.OperatorId);
+            notifier.Send(
+                crew.Concat(eps).Append(booking.ProducerId),
+                $"#{booking.ProductionNo} {booking.Title} is confirmed for {NbcTime.Text(booking.StartsAt)}.",
+                booking.Id);
+        }
 
         try
         {

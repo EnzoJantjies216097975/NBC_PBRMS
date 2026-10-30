@@ -14,4 +14,7 @@ public static class NbcTime
 
     /// <summary>A Windhoek date and time as a moment in time.</summary>
     public static DateTimeOffset At(DateOnly date, TimeOnly time) => new(date.ToDateTime(time), Offset);
+
+    /// <summary>A moment as NBC writes it in messages: 06/12/2026 06h30.</summary>
+    public static string Text(DateTimeOffset moment) => moment.ToOffset(Offset).ToString("dd/MM/yyyy HH'h'mm");
 }

@@ -38,14 +38,14 @@ public static class DevSeed
         {
             db.ShiftDefinitions.AddRange(
                 new ShiftDefinition { Division = division, Code = "O", Label = "Off", Kind = ShiftKind.Off },
-                new ShiftDefinition { Division = division, Code = "L", Label = "Leave", Kind = ShiftKind.Off },
+                new ShiftDefinition { Division = division, Code = "L", Label = "Leave", Kind = ShiftKind.Leave },
                 new ShiftDefinition { Division = division, Code = "TR", Label = "Trip, out of town", Kind = ShiftKind.Away },
                 new ShiftDefinition { Division = division, Code = "OB", Label = "Outside broadcast", Kind = ShiftKind.Worked },
                 new ShiftDefinition { Division = division, Code = "A1", Label = "Any production", Kind = ShiftKind.Worked, Start = new(8, 0), End = new(17, 0) },
-                new ShiftDefinition { Division = division, Code = "ST1", Label = "Studio 1", Kind = ShiftKind.Worked, Start = new(13, 0), End = new(21, 0) },
+                new ShiftDefinition { Division = division, Code = "ST1", Label = "Studio 1", Kind = ShiftKind.Worked, Studio = Venue.Studio1, Start = new(13, 0), End = new(21, 0) },
                 new ShiftDefinition
                 {
-                    Division = division, Code = "ST2", Label = "Studio 2", Kind = ShiftKind.Worked,
+                    Division = division, Code = "ST2", Label = "Studio 2", Kind = ShiftKind.Worked, Studio = Venue.Studio2,
                     Start = new(5, 0), End = new(14, 0), SecondStart = new(13, 0), SecondEnd = new(22, 0)
                 },
                 new ShiftDefinition { Division = division, Code = "N", Label = "Night", Kind = ShiftKind.Worked, Start = new(19, 0), End = new(2, 0) });

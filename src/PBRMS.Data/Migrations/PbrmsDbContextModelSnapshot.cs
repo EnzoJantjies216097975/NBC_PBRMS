@@ -35,6 +35,12 @@ namespace PBRMS.Data.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<DateTimeOffset?>("ActualEndAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ActualStartAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset?>("AirAt")
                         .HasColumnType("datetimeoffset");
 
@@ -64,6 +70,9 @@ namespace PBRMS.Data.Migrations
                     b.Property<string>("Notes")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTimeOffset?>("OvertimeNotifiedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("ProducerId")
                         .HasColumnType("uniqueidentifier");
@@ -272,6 +281,38 @@ namespace PBRMS.Data.Migrations
                     b.ToTable("MonthlyRosters");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("BookingId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("Notifications");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.OrgUnit", b =>
                 {
                     b.Property<Guid>("Id")
@@ -399,6 +440,10 @@ namespace PBRMS.Data.Migrations
 
                     b.Property<TimeOnly?>("Start")
                         .HasColumnType("time");
+
+                    b.Property<string>("Studio")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
 
                     b.HasKey("Id");
 
@@ -554,6 +599,22 @@ namespace PBRMS.Data.Migrations
                     b.Navigation("Division");
 
                     b.Navigation("PublishedBy");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.Notification", b =>
+                {
+                    b.HasOne("PBRMS.Domain.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PBRMS.Domain.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.OrgUnit", b =>

@@ -29,14 +29,19 @@ public record BookingForm(
 /// <summary>One crew position on the form. Leave the times empty to use the booking's own times.</summary>
 public record CrewSlotForm(Guid DivisionId, string PositionLabel, DateTimeOffset? StartsAt, DateTimeOffset? EndsAt, string? SpecialEquipment);
 
-/// <summary>Move a booking on: submit, approve, send back or cancel.</summary>
+/// <summary>Move a booking on: submit, approve, send back, start, end or cancel.</summary>
 /// <param name="Note">Why. Required when sending back or cancelling.</param>
 /// <param name="Channel">The EP may set the channel when approving.</param>
 /// <param name="AirAt">The EP may set the air date and time when approving.</param>
-public record TransitionRequest(BookingAction Action, string? Note, Channel? Channel, DateTimeOffset? AirAt);
+/// <param name="AcknowledgeWarnings">The Booking Officer has seen the warnings on this booking and wants to confirm anyway.</param>
+public record TransitionRequest(BookingAction Action, string? Note, Channel? Channel, DateTimeOffset? AirAt, bool AcknowledgeWarnings = false);
 
 /// <summary>Fill or empty crew positions on a booking. Positions not listed stay as they are.</summary>
-public record CrewRequest(List<CrewChange> Assignments);
+/// <param name="AcknowledgeWarnings">
+/// The person has seen the warnings (a day off, another studio) and wants to go ahead.
+/// Without it, a warning comes back as a 409 listing them, and nothing is saved.
+/// </param>
+public record CrewRequest(List<CrewChange> Assignments, bool AcknowledgeWarnings = false);
 
 /// <summary>Put this operator on this slot. An empty OperatorId takes the current operator off it.</summary>
 public record CrewChange(Guid SlotId, Guid? OperatorId);
@@ -62,6 +67,8 @@ public record BookingResponse(
     DateTimeOffset EndsAt,
     DateTimeOffset? AirAt,
     Channel? Channel,
+    DateTimeOffset? ActualStartAt,
+    DateTimeOffset? ActualEndAt,
     bool IsTrip,
     bool IsOb,
     string? AllocationCode,
@@ -75,7 +82,7 @@ public record BookingResponse(
         b.DepartmentId, b.Department.Name,
         b.ProducerId, $"{b.Producer.FirstName} {b.Producer.Surname}",
         b.ActivityType, b.Venue, b.VenueText,
-        b.CallAt, b.StartsAt, b.EndsAt, b.AirAt, b.Channel,
+        b.CallAt, b.StartsAt, b.EndsAt, b.AirAt, b.Channel, b.ActualStartAt, b.ActualEndAt,
         b.IsTrip, b.IsOb, b.AllocationCode, b.Notes,
         b.CrewSlots
             .OrderBy(s => s.Division.Name).ThenBy(s => s.PositionLabel)

@@ -16,13 +16,13 @@ public static class ShiftDefinitionEndpoints
     public record ShiftResponse(
         Guid Id, string Code, string Label, ShiftKind Kind,
         TimeOnly? Start, TimeOnly? End, TimeOnly? SecondStart, TimeOnly? SecondEnd,
-        string? Colour, bool IsActive);
+        string? Colour, bool IsActive, Venue? Studio);
 
     /// <summary>A code as filled in on the legend. The second pair of hours is for two-shift days.</summary>
     public record ShiftForm(
         string Code, string Label, ShiftKind Kind,
         TimeOnly? Start, TimeOnly? End, TimeOnly? SecondStart, TimeOnly? SecondEnd,
-        string? Colour, bool IsActive = true);
+        string? Colour, bool IsActive = true, Venue? Studio = null);
 
     public static void MapShiftDefinitionEndpoints(this WebApplication app)
     {
@@ -30,7 +30,7 @@ public static class ShiftDefinitionEndpoints
             await db.ShiftDefinitions.AsNoTracking()
                 .Where(s => s.DivisionId == divisionId)
                 .OrderBy(s => s.Code)
-                .Select(s => new ShiftResponse(s.Id, s.Code, s.Label, s.Kind, s.Start, s.End, s.SecondStart, s.SecondEnd, s.Colour, s.IsActive))
+                .Select(s => new ShiftResponse(s.Id, s.Code, s.Label, s.Kind, s.Start, s.End, s.SecondStart, s.SecondEnd, s.Colour, s.IsActive, s.Studio))
                 .ToListAsync())
             .RequireAuthorization();
 
@@ -120,8 +120,9 @@ public static class ShiftDefinitionEndpoints
         shift.SecondEnd = form.SecondEnd;
         shift.Colour = form.Colour?.Trim();
         shift.IsActive = form.IsActive;
+        shift.Studio = form.Studio;
     }
 
     private static ShiftResponse Respond(ShiftDefinition s) =>
-        new(s.Id, s.Code, s.Label, s.Kind, s.Start, s.End, s.SecondStart, s.SecondEnd, s.Colour, s.IsActive);
+        new(s.Id, s.Code, s.Label, s.Kind, s.Start, s.End, s.SecondStart, s.SecondEnd, s.Colour, s.IsActive, s.Studio);
 }

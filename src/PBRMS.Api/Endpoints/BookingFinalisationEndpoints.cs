@@ -31,7 +31,7 @@ public static class BookingFinalisationEndpoints
     /// doesn't refuse them, because the Booking Officer may need several moves to sort out
     /// a busy day; confirming is what's blocked while a clash remains.
     /// </summary>
-    private static async Task<IResult> ChangeSchedule(Guid id, ScheduleRequest request, PbrmsDbContext db)
+    private static async Task<IResult> ChangeSchedule(Guid id, ScheduleRequest request, PbrmsDbContext db, Notifier notifier)
     {
         var booking = await db.Bookings.Include(b => b.CrewSlots).FirstOrDefaultAsync(b => b.Id == id);
         if (booking is null)
@@ -55,6 +55,16 @@ public static class BookingFinalisationEndpoints
             var onBookingHours = slot.StartsAt == booking.StartsAt && slot.EndsAt == booking.EndsAt;
             slot.StartsAt = onBookingHours ? request.StartsAt : slot.StartsAt + shift;
             slot.EndsAt = onBookingHours ? request.EndsAt : slot.EndsAt + shift;
+        }
+
+        // A new studio can undo what the supervisors planned, so they are told to check their crew.
+        if (request.Venue != booking.Venue)
+        {
+            var supervisors = await notifier.PeopleWithRoleAsync(Role.Supervisor, booking.CrewSlots.Select(s => s.DivisionId));
+            notifier.Send(
+                supervisors,
+                $"#{booking.ProductionNo} {booking.Title} has moved from {booking.Venue} to {request.Venue}. Please make the changes needed to your crew.",
+                booking.Id);
         }
 
         booking.Venue = request.Venue;

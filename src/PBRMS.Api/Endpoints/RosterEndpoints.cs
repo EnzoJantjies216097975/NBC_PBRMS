@@ -138,11 +138,11 @@ public static class RosterEndpoints
     }
 
     /// <summary>
-    /// Puts the draft in force. Later: tells the operators (App Flow Document, step 4).
+    /// Puts the draft in force and tells the operators on it (App Flow Document, step 4).
     /// A clash with a confirmed booking doesn't stop it, because someone may really be
     /// on leave. It comes back as a warning so the supervisor can get the crew changed.
     /// </summary>
-    private static async Task<IResult> Publish(Guid divisionId, string month, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker)
+    private static async Task<IResult> Publish(Guid divisionId, string month, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker, Notifier notifier)
     {
         if (ParseMonth(month) is not DateOnly first)
             return BadMonth();
@@ -159,6 +159,9 @@ public static class RosterEndpoints
         roster.PublishedAt = DateTimeOffset.UtcNow;
         roster.PublishedById = PbrmsClaims.UserIdOf(principal);
         roster.UpdatedAt = DateTimeOffset.UtcNow;
+
+        var monthName = first.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+        notifier.Send(roster.Entries.Select(e => e.OperatorId), $"The {monthName} roster has been published.");
 
         try
         {

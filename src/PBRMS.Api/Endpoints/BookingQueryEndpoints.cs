@@ -49,9 +49,10 @@ public static class BookingQueryEndpoints
         var caller = await Caller.LoadAsync(principal, db);
         var units = await db.OrgUnits.AsNoTracking().ToListAsync();
 
-        // Review stages only. Drafts belong to their producer and show in /bookings/mine.
+        // Stages where someone else must act on the booking. Stages that belong to its
+        // producer (their draft, the production day) show in /bookings/mine.
         var reviewStages = BookingWorkflow.Steps
-            .Where(s => s.From != BookingStatus.Draft)
+            .Where(s => s.ActedBy != Role.Producer)
             .Select(s => s.From)
             .Distinct()
             .ToList();

@@ -16,6 +16,12 @@ public enum BookingAction
     /// </summary>
     SendBack,
 
+    /// <summary>The producer confirms the production has started.</summary>
+    Start,
+
+    /// <summary>The producer confirms the production has ended.</summary>
+    End,
+
     /// <summary>Call the booking off. Possible from any stage until it is completed.</summary>
     Cancel
 }
@@ -55,7 +61,16 @@ public static class BookingWorkflow
         new(BookingStatus.CrewAssignment, BookingAction.SendBack, Role.Supervisor, BookingStatus.EpReview),
 
         new(BookingStatus.Finalisation, BookingAction.Approve, Role.BookingOfficer, BookingStatus.Confirmed),
+
+        new(BookingStatus.Confirmed, BookingAction.Start, Role.Producer, BookingStatus.InProgress),
+        new(BookingStatus.InProgress, BookingAction.End, Role.Producer, BookingStatus.Completed),
     ];
+
+    /// <summary>
+    /// How far past its booked end a production can run before it counts as overtime and
+    /// supervisors and managers are told (TR-07: "30 min overrun").
+    /// </summary>
+    public static readonly TimeSpan OverrunThreshold = TimeSpan.FromMinutes(30);
 
     /// <summary>Besides the booking's own producer, these roles may cancel a booking.</summary>
     public static readonly IReadOnlyList<Role> CancelledBy =

@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using PBRMS.Api;
 using PBRMS.Api.Auth;
 using PBRMS.Api.Endpoints;
 using PBRMS.Data;
@@ -13,6 +14,9 @@ builder.Services.AddDbContext<PbrmsDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Pbrms")));
 
 builder.Services.AddScoped<ClashChecker>();
+builder.Services.AddScoped<Notifier>();
+builder.Services.AddScoped<OvertimeWatcher>();
+builder.Services.AddHostedService<OvertimeWatcherService>();
 
 builder.AddPbrmsSignIn();
 
@@ -56,12 +60,13 @@ app.MapBookingFinalisationEndpoints();
 app.MapOperatorEndpoints();
 app.MapShiftDefinitionEndpoints();
 app.MapRosterEndpoints();
+app.MapNotificationEndpoints();
 
 if (SignIn.IsDevelopmentMode(app.Configuration))
     app.MapDevLoginEndpoints();
 
 // Development only: create or update the database and add sample people, so the
-// API works straight after "dotnet run". Tests turn this off and set up their own database.
+// API works straight after "dotnet run".
 if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Database:PrepareOnStartup"))
 {
     using var scope = app.Services.CreateScope();

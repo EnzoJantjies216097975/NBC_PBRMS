@@ -46,8 +46,10 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `GET /bookings/{id}` | One booking with its crew positions and history |
 | `GET /bookings/mine` | Your bookings, as a producer |
 | `GET /bookings/queue` | Bookings waiting for you to approve or send back |
-| `POST /bookings/{id}/transition` | `{ "action": "Submit" \| "Approve" \| "SendBack" \| "Cancel", "note": "..." }` |
-| `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. Supervisors and the Booking Officer. Filling the last slot moves the booking on to Finalisation. |
+| `POST /bookings/{id}/transition` | `{ "action": "...", "note": "..." }`. Actions: Submit, Approve, SendBack, Start, End, Cancel. |
+| `GET /notifications` | Your newest notifications |
+| `POST /notifications/{id}/read` | Mark one as read |
+| `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. Supervisors and the Booking Officer. Filling the last slot moves the booking on to Finalisation. On a confirmed booking it replaces the operator. |
 | `GET /bookings/{id}/clashes` | Everything the booking clashes with |
 | `PUT /bookings/{id}/schedule` | The Booking Officer moves a booking at Finalisation to another studio or time |
 | `GET /org-units/{id}/operators` | Active operators in a division, for the crew picker |
@@ -78,6 +80,28 @@ Send every request except health and dev-login with `Authorization: Bearer <toke
 
 If you change `DevSeed.cs`, drop the development database to pick up the change:
 `dotnet ef database drop --project src/PBRMS.Data --startup-project src/PBRMS.Api`.
+
+
+## What the roster does to crew assignments
+
+| The roster says | What happens |
+| --- | --- |
+| Leave | Refused, and it can't be overridden. Book someone else. |
+| Away (trip) | Refused, unless the booking is a trip. |
+| Not on shift at that time | Refused. |
+| Day off | A warning. Going ahead notifies the operator, the division's supervisors and the Booking Officer. |
+| Rostered to another studio | A warning. Going ahead tells the supervisors to sort out the cover. |
+| Rostered to a studio in use, booked on non-studio work | Refused: studio productions have priority. |
+| Rostered to an idle studio, booked on non-studio work | A warning, as above. |
+| Blank cell, or a draft roster | Nothing: unknown is never a clash. |
+
+A warning comes back as a 409 with `needsAcknowledgement: true`, and nothing is saved.
+Send the same request again with `"acknowledgeWarnings": true` to go ahead. The Booking
+Officer sees any remaining warnings the same way when confirming.
+
+A production still running 30 minutes after its booked end counts as overtime. The
+supervisors of its crew divisions and its department's Production Manager are told once.
+The API checks every minute, so on IIS the site must be set to Always Running.
 
 ## Run the tests
 

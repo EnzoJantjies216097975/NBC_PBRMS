@@ -83,11 +83,20 @@ public static class TestSteps
         return await api.AssignOkAsync("supervisor@pbrms.test", booking, "Camera", await api.NewOperatorAsync("Camera"));
     }
 
-    public static async Task<HttpResponseMessage> AssignAsync(this TestApi api, string email, BookingResponse booking, string division, Guid operatorId)
+    public static async Task<HttpResponseMessage> AssignAsync(this TestApi api, string email, BookingResponse booking, string division, Guid operatorId, bool acknowledge = false)
     {
         var client = await api.SignedInClientAsync(email);
         var slot = booking.CrewSlots.Single(s => s.Division == division);
-        return await client.PutAsJsonAsync($"/bookings/{booking.Id}/crew", new CrewRequest([new(slot.Id, operatorId)]), Json);
+        return await client.PutAsJsonAsync($"/bookings/{booking.Id}/crew", new CrewRequest([new(slot.Id, operatorId)], acknowledge), Json);
+    }
+
+    /// <summary>The sign-in email of an operator made by <see cref="NewOperatorAsync"/>.</summary>
+    public static string OperatorEmail(Guid operatorId) => $"{operatorId:N}@pbrms.test";
+
+    public static async Task<List<NotificationEndpoints.NotificationResponse>> NotificationsAsync(this TestApi api, string email)
+    {
+        var client = await api.SignedInClientAsync(email);
+        return (await client.GetFromJsonAsync<List<NotificationEndpoints.NotificationResponse>>("/notifications", Json))!;
     }
 
     public static async Task<BookingResponse> AssignOkAsync(this TestApi api, string email, BookingResponse booking, string division, Guid operatorId)

@@ -11,16 +11,18 @@ namespace PBRMS.Data;
 public class ClashChecker(PbrmsDbContext db)
 {
     /// <summary>
-    /// Why this operator can't work the given period: other productions they are on, and
-    /// what the published roster says.
-    /// An operator may hold two positions on the same production, so pass
-    /// <paramref name="exceptBookingId"/> when checking a crew list for that booking.
+    /// Why this operator can't work the given period, or needs a warning first: other
+    /// productions they are on, and what the published roster says.
     /// </summary>
-    /// <param name="forTrip">The period is for an out-of-town booking, which someone rostered away can work.</param>
-    public async Task<List<Clash>> ForOperatorAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to, Guid? exceptBookingId = null, bool forTrip = false)
+    /// <param name="forBooking">
+    /// The booking the period is for, if there is one. It tells us where the work is, whether
+    /// it's a trip, and to ignore this booking itself, because an operator may hold two
+    /// positions on the same production.
+    /// </param>
+    public async Task<List<Clash>> ForOperatorAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to, Booking? forBooking = null)
     {
-        var clashes = await OtherProductionsAsync(operatorId, from, to, exceptBookingId);
-        clashes.AddRange(await RosterClashesAsync(operatorId, from, to, forTrip));
+        var clashes = await OtherProductionsAsync(operatorId, from, to, forBooking?.Id);
+        clashes.AddRange(await RosterClashesAsync(operatorId, from, to, forBooking));
         return clashes;
     }
 
@@ -48,7 +50,7 @@ public class ClashChecker(PbrmsDbContext db)
     /// What the rosters in force say about this period. Only a published roster counts:
     /// a draft may still change, and a blank cell (no entry) is unknown, not a clash.
     /// </summary>
-    private async Task<List<Clash>> RosterClashesAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to, bool forTrip)
+    private async Task<List<Clash>> RosterClashesAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to, Booking? forBooking)
     {
         var days = RosterRules.DaysCovered(from, to);
         var (firstDay, lastDay) = (days[0], days[^1]);
@@ -79,13 +81,33 @@ public class ClashChecker(PbrmsDbContext db)
         foreach (var entry in entries)
         {
             var shifts = ShiftsIn(entry.ShiftCode, legends.Where(s => s.DivisionId == entry.DivisionId));
-            var reason = RosterRules.ClashReason(shifts, entry.Date, from, to, forTrip);
-            if (reason is not null)
-                clashes.Add(new Clash(ClashKind.Roster, entry.Name, null, reason, from, to));
+            var finding = RosterRules.Check(shifts, entry.Date, from, to, forBooking?.IsTrip ?? false, forBooking?.Venue);
+            if (finding is null)
+                continue;
+
+            var clash = new Clash(finding.Kind, entry.Name, null, finding.Reason, from, to);
+
+            // Studio productions have priority: someone rostered to a studio that's in use
+            // can't be taken for work outside the studios.
+            if (finding.Kind == ClashKind.RosteredElsewhere
+                && !ClashRules.IsStudio(forBooking!.Venue)
+                && await StudioInUseAsync(finding.Studio!.Value, from, to, forBooking.Id))
+            {
+                clash = clash with { Kind = ClashKind.StudioPriority, Title = $"{finding.Reason}, which is in use" };
+            }
+
+            clashes.Add(clash);
         }
 
         return clashes;
     }
+
+    private Task<bool> StudioInUseAsync(Venue studio, DateTimeOffset from, DateTimeOffset to, Guid exceptBookingId) =>
+        db.Bookings.AnyAsync(b => b.Id != exceptBookingId
+                                  && b.Venue == studio
+                                  && ClashRules.StatusesHoldingCrew.Contains(b.Status)
+                                  // Same as ClashRules.Overlaps, written out so SQL Server can run it.
+                                  && b.StartsAt < to && from < b.EndsAt);
 
     /// <summary>
     /// Checks a roster the other way round: is anyone on a confirmed production on a day
@@ -112,7 +134,8 @@ public class ClashChecker(PbrmsDbContext db)
                 a.CrewSlot.EndsAt,
                 a.CrewSlot.Booking.ProductionNo,
                 a.CrewSlot.Booking.Title,
-                a.CrewSlot.Booking.IsTrip
+                a.CrewSlot.Booking.IsTrip,
+                a.CrewSlot.Booking.Venue
             })
             .ToListAsync();
 
@@ -127,9 +150,9 @@ public class ClashChecker(PbrmsDbContext db)
                 if (entry is null)
                     continue;
 
-                var reason = RosterRules.ClashReason(ShiftsIn(entry.ShiftCode, legend), day, job.StartsAt, job.EndsAt, job.IsTrip);
-                if (reason is not null)
-                    clashes.Add(new Clash(ClashKind.Roster, job.Name, job.ProductionNo, $"{job.Title}: {reason}", job.StartsAt, job.EndsAt));
+                var finding = RosterRules.Check(ShiftsIn(entry.ShiftCode, legend), day, job.StartsAt, job.EndsAt, job.IsTrip, job.Venue);
+                if (finding is not null)
+                    clashes.Add(new Clash(finding.Kind, job.Name, job.ProductionNo, $"{job.Title}: {finding.Reason}", job.StartsAt, job.EndsAt));
             }
         }
 
@@ -169,7 +192,7 @@ public class ClashChecker(PbrmsDbContext db)
         var clashes = await ForVenueAsync(booking);
 
         foreach (var slot in booking.CrewSlots.Where(s => s.Current is not null))
-            clashes.AddRange(await ForOperatorAsync(slot.Current!.OperatorId, slot.StartsAt, slot.EndsAt, booking.Id, booking.IsTrip));
+            clashes.AddRange(await ForOperatorAsync(slot.Current!.OperatorId, slot.StartsAt, slot.EndsAt, booking));
 
         return clashes.Distinct().ToList();
     }

@@ -8,7 +8,7 @@ namespace PBRMS.Domain;
 /// <remarks>
 /// The schema document also has a day_type column (weekday, Saturday, Sunday), but
 /// none of the 212 codes on the current board change hours by day, so it is left out.
-/// Which studio a code ties someone to comes with crew recommendations (FR-CREW-03).
+/// Rules for what a code means for a booking are in <see cref="RosterRules"/>.
 /// </remarks>
 public class ShiftDefinition
 {
@@ -32,6 +32,12 @@ public class ShiftDefinition
     public TimeOnly? SecondStart { get; set; }
     public TimeOnly? SecondEnd { get; set; }
 
+    /// <summary>
+    /// The studio this shift ties someone to, if any. Studio productions have priority, so
+    /// moving a person away from their studio needs the supervisor to sort out the cover.
+    /// </summary>
+    public Venue? Studio { get; set; }
+
     /// <summary>The colour shown on the grid, e.g. "#5FB87A".</summary>
     public string? Colour { get; set; }
 
@@ -54,8 +60,11 @@ public class ShiftDefinition
 /// <summary>What a shift code says about the person that day.</summary>
 public enum ShiftKind
 {
-    /// <summary>Not working: off, leave, public holiday.</summary>
+    /// <summary>A day off, such as a rest day or public holiday. They can be called in, with a warning.</summary>
     Off,
+
+    /// <summary>On leave. They can't be booked at all: the supervisor must book someone else.</summary>
+    Leave,
 
     /// <summary>Out of town: a trip or fly-away. They can't be in the building, but they can be on a trip.</summary>
     Away,

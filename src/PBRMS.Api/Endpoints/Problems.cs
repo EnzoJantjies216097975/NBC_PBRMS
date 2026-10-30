@@ -20,6 +20,15 @@ internal static class Problems
         statusCode: StatusCodes.Status409Conflict,
         extensions: new Dictionary<string, object?> { ["clashes"] = clashes });
 
+    /// <summary>
+    /// 409 with warnings that someone must acknowledge before this can go ahead. Nothing was
+    /// saved. The app shows them, and sends the request again with acknowledgeWarnings: true.
+    /// </summary>
+    public static IResult Warnings(string why, List<Clash> warnings) => Results.Problem(
+        why,
+        statusCode: StatusCodes.Status409Conflict,
+        extensions: new Dictionary<string, object?> { ["clashes"] = warnings, ["needsAcknowledgement"] = true });
+
     /// <summary>400: something in the request needs fixing; says which field and why.</summary>
     public static IResult Invalid(string field, string why) => Results.ValidationProblem(new Dictionary<string, string[]> { [field] = [why] });
 }

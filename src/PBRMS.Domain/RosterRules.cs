@@ -1,9 +1,19 @@
 namespace PBRMS.Domain;
 
+/// <summary>What the roster says about a period: what kind of problem, and why.</summary>
+/// <param name="Studio">For <see cref="ClashKind.RosteredElsewhere"/>: the studio the person is rostered to.</param>
+public record RosterFinding(ClashKind Kind, string Reason, Venue? Studio = null);
+
 /// <summary>
-/// What a roster says about whether someone can work a production. These rules come
-/// from the current Production Board (lib/shifts.js and the Flags tab), because the
-/// PBRMS documents only say "resolved through shift_definitions".
+/// What a roster says about whether someone can work a production. The hours rules
+/// come from the current Production Board (lib/shifts.js and the Flags tab); the rules
+/// for leave, days off and studios were decided for PBRMS in October 2026.
+///
+///   On leave                  Refused. The supervisor must book someone else.
+///   Rostered away             Refused, unless the booking is itself a trip.
+///   Not on shift at that time Refused.
+///   Day off                   A warning. They can be called in, and are then notified.
+///   Rostered to another studio A warning, and the supervisor sorts out the cover.
 /// </summary>
 public static class RosterRules
 {
@@ -29,41 +39,51 @@ public static class RosterRules
     }
 
     /// <summary>
-    /// Why someone with these shifts can't work this period, or null if they can.
+    /// What this roster cell means for working this period, or null if it's fine.
     /// Pass every code in the cell. With none (a blank cell, or a code no longer on the
     /// legend) there is no answer, and "unknown" must never be reported as a clash.
     /// </summary>
     /// <param name="forTrip">The period is for an out-of-town booking.</param>
-    public static string? ClashReason(IReadOnlyCollection<ShiftDefinition> shifts, DateOnly day, DateTimeOffset from, DateTimeOffset to, bool forTrip)
+    /// <param name="venue">Where the work is, or null if that isn't known yet.</param>
+    public static RosterFinding? Check(
+        IReadOnlyCollection<ShiftDefinition> shifts, DateOnly day, DateTimeOffset from, DateTimeOffset to, bool forTrip, Venue? venue = null)
     {
         if (shifts.Count == 0)
             return null;
 
-        // Off only if every code says so: half of "O+ST2" is still a working day.
-        if (shifts.All(s => s.Kind == ShiftKind.Off))
-            return $"Off on the roster ({Describe(shifts)})";
-
-        var working = shifts.Where(s => s.Kind != ShiftKind.Off).ToList();
+        // Not working only if every code says so: half of "O+ST2" is still a working day.
+        // Leave outranks a day off, because leave can't be overridden.
+        var working = shifts.Where(s => s.Kind is not (ShiftKind.Off or ShiftKind.Leave)).ToList();
+        if (working.Count == 0)
+        {
+            return shifts.Any(s => s.Kind == ShiftKind.Leave)
+                ? new RosterFinding(ClashKind.OnLeave, $"On leave ({Describe(shifts)})")
+                : new RosterFinding(ClashKind.CallIn, $"Day off on the roster ({Describe(shifts)})");
+        }
 
         // Someone rostered out of town can only be on a trip.
         if (!forTrip && working.All(s => s.Kind == ShiftKind.Away))
-            return $"Away on the roster ({Describe(shifts)})";
+            return new RosterFinding(ClashKind.Roster, $"Away on the roster ({Describe(shifts)})");
+
+        // The shifts that touch this period. Any overlap is enough: running past the end
+        // of a shift is overtime, not a clash.
+        var touching = working
+            .Where(s => s.WindowsOn(day).Any(window => ClashRules.Overlaps(window.Start, window.End, from, to)))
+            .ToList();
 
         // Hours don't apply to trips or to anything longer than a day: going out of town
-        // isn't a question of hours (the board's rule).
-        if (forTrip || to - from >= TimeSpan.FromHours(24))
-            return null;
+        // isn't a question of hours (the board's rule). A code with no fixed hours fits anything.
+        var hoursMatter = !forTrip && to - from < TimeSpan.FromHours(24) && working.All(s => s.Start is not null);
+        if (hoursMatter && touching.Count == 0)
+            return new RosterFinding(ClashKind.Roster, $"Not on shift at that time ({Describe(shifts)})");
 
-        // A code with no fixed hours fits anything.
-        if (working.Any(s => s.Start is null))
-            return null;
+        // Rostered to a studio, but this work is somewhere else. A shift not tied to a
+        // studio leaves them free to go anywhere.
+        var studios = touching.Select(s => s.Studio).ToList();
+        if (studios.Count > 0 && studios.All(s => s is not null) && !studios.Contains(venue) && venue is not null)
+            return new RosterFinding(ClashKind.RosteredElsewhere, $"Rostered to {studios[0]} ({Describe(touching)})", studios[0]);
 
-        // Any overlap is enough. Running past the end of a shift is overtime, not a clash.
-        var onShift = working
-            .SelectMany(s => s.WindowsOn(day))
-            .Any(window => ClashRules.Overlaps(window.Start, window.End, from, to));
-
-        return onShift ? null : $"Not on shift at that time ({Describe(shifts)})";
+        return null;
     }
 
     private static string Describe(IEnumerable<ShiftDefinition> shifts) =>

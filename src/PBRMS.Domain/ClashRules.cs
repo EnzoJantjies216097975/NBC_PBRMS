@@ -1,6 +1,6 @@
 namespace PBRMS.Domain;
 
-/// <summary>What is double-booked.</summary>
+/// <summary>What the clash is. Some stop the work; some are warnings to acknowledge.</summary>
 public enum ClashKind
 {
     /// <summary>An operator is on another production at the same time.</summary>
@@ -9,8 +9,20 @@ public enum ClashKind
     /// <summary>A studio is used by another production at the same time.</summary>
     Venue,
 
-    /// <summary>The published roster says the operator is off, away or not on shift.</summary>
-    Roster
+    /// <summary>The published roster says the operator is away or not on shift.</summary>
+    Roster,
+
+    /// <summary>The operator is on leave. This can't be overridden: book someone else.</summary>
+    OnLeave,
+
+    /// <summary>The operator's studio is in use, and studio productions have priority over other work.</summary>
+    StudioPriority,
+
+    /// <summary>A warning: the operator has a day off and would be called in.</summary>
+    CallIn,
+
+    /// <summary>A warning: the operator is rostered to another studio, so that studio needs cover.</summary>
+    RosteredElsewhere
 }
 
 /// <summary>
@@ -20,7 +32,11 @@ public enum ClashKind
 /// <param name="Who">The operator's name, or the venue.</param>
 /// <param name="ProductionNo">The production in the way. Empty when the clash is with the roster itself.</param>
 /// <param name="Title">The production's title, or why the roster says no.</param>
-public record Clash(ClashKind Kind, string Who, int? ProductionNo, string Title, DateTimeOffset StartsAt, DateTimeOffset EndsAt);
+public record Clash(ClashKind Kind, string Who, int? ProductionNo, string Title, DateTimeOffset StartsAt, DateTimeOffset EndsAt)
+{
+    /// <summary>True if this can go ahead once someone acknowledges it; false if it stops the work.</summary>
+    public bool IsWarning => Kind is ClashKind.CallIn or ClashKind.RosteredElsewhere;
+}
 
 /// <summary>
 /// What counts as a clash (BR-06). The rules are here with no database code; the
@@ -43,6 +59,12 @@ public static class ClashRules
     /// </summary>
     public static bool VenueCanClash(Venue venue) =>
         venue is Venue.Studio1 or Venue.Studio2 or Venue.Studio3 or Venue.Studio4 or Venue.App;
+
+    /// <summary>
+    /// Is this one of the studios? Studio productions have priority over other work.
+    /// </summary>
+    public static bool IsStudio(Venue venue) =>
+        venue is Venue.Studio1 or Venue.Studio2 or Venue.Studio3 or Venue.Studio4;
 
     /// <summary>
     /// Bookings whose crew count as taken: everything except drafts and cancelled bookings

@@ -62,6 +62,13 @@ public class Booking
     /// <summary>The crew the production needs, one entry per position (e.g. "Camera 2").</summary>
     public List<CrewSlot> CrewSlots { get; set; } = [];
 
+    /// <summary>When the producer confirmed it started and ended (the booked times are <see cref="StartsAt"/> and <see cref="EndsAt"/>).</summary>
+    public DateTimeOffset? ActualStartAt { get; set; }
+    public DateTimeOffset? ActualEndAt { get; set; }
+
+    /// <summary>When people were told it had gone overtime, so they are told only once.</summary>
+    public DateTimeOffset? OvertimeNotifiedAt { get; set; }
+
     /// <summary>Every status change, oldest first: who did it, when, and why (TR-03).</summary>
     public List<BookingStatusChange> History { get; set; } = [];
 

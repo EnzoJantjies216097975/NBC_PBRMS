@@ -211,3 +211,47 @@ Authorization: Bearer {{supervisor.response.body.token}}
 ### R6. In the evening of the 2nd? No: outside their shift.
 GET {{api}}/operators/{{operators.response.body.$[0].id}}/conflicts?from={{month}}-02T19:00:00%2B02:00&to={{month}}-02T21:00:00%2B02:00
 Authorization: Bearer {{supervisor.response.body.token}}
+
+
+### ---- Warnings and notifications (needs the sign-ins, "units" and step 6 above) ----
+# Uses @month and the operator from the roster steps. Send R1 and R3 first.
+# In that roster the operator is on leave on the 1st, and has an A1 shift on the 2nd.
+
+### W1. A day off on the 3rd: add it to the roster...
+PUT {{api}}/rosters/{{units.response.body.$[0].id}}/{{month}}
+Authorization: Bearer {{supervisor.response.body.token}}
+Content-Type: application/json
+
+{ "entries": [{ "operatorId": "{{operators.response.body.$[0].id}}", "date": "{{month}}-03", "code": "O" }] }
+
+### W2. ...and publish it.
+POST {{api}}/rosters/{{units.response.body.$[0].id}}/{{month}}/publish
+Authorization: Bearer {{supervisor.response.body.token}}
+
+### W3. The operator on leave on the 1st: "kind" is OnLeave, and it can't be overridden.
+GET {{api}}/operators/{{operators.response.body.$[0].id}}/conflicts?from={{month}}-01T09:00:00%2B02:00&to={{month}}-01T11:00:00%2B02:00
+Authorization: Bearer {{supervisor.response.body.token}}
+
+### W4. The operator on the 3rd: "kind" is CallIn and "isWarning" is true. To go ahead, send
+# PUT /bookings/{id}/crew again with "acknowledgeWarnings": true. They are then notified.
+GET {{api}}/operators/{{operators.response.body.$[0].id}}/conflicts?from={{month}}-03T09:00:00%2B02:00&to={{month}}-03T11:00:00%2B02:00
+Authorization: Bearer {{supervisor.response.body.token}}
+
+### W5. The producer's notifications, such as "is confirmed" from step 9.
+GET {{api}}/notifications
+Authorization: Bearer {{producer.response.body.token}}
+
+### W6. The producer marks the booking from step 1 as started.
+POST {{api}}/bookings/{{booking.response.body.id}}/transition
+Authorization: Bearer {{producer.response.body.token}}
+Content-Type: application/json
+
+{ "action": "Start" }
+
+### W7. ...and as ended. If it runs 30 minutes past its booked end before this, the
+# supervisors and the Production Manager are told automatically.
+POST {{api}}/bookings/{{booking.response.body.id}}/transition
+Authorization: Bearer {{producer.response.body.token}}
+Content-Type: application/json
+
+{ "action": "End" }
