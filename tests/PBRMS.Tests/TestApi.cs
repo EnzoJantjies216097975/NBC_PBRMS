@@ -78,6 +78,14 @@ public sealed class TestApi : WebApplicationFactory<Program>, IAsyncLifetime
         await work(scope.ServiceProvider.GetRequiredService<PbrmsDbContext>());
     }
 
+    /// <summary>A sign-in token for the user with this email.</summary>
+    public async Task<string> TokenAsync(string email)
+    {
+        var response = await CreateClient().PostAsJsonAsync("/auth/dev-login", new { email });
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<TokenResponse>())!.Token;
+    }
+
     /// <summary>An HTTP client already signed in as the user with this email.</summary>
     public async Task<HttpClient> SignedInClientAsync(string email)
     {

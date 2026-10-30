@@ -62,6 +62,13 @@ public static class BookingTransitionEndpoints
         });
         booking.Status = newStatus;
 
+        // A booking has come in for the EP, from the producer or sent back from crewing.
+        if (newStatus == BookingStatus.EpReview)
+            services.Notifier.Send(
+                await services.Notifier.PeopleWithRoleAsync(Role.ExecutiveProducer, departmentChain),
+                $"#{booking.ProductionNo} {booking.Title} ({NbcTime.Text(booking.StartsAt)}) needs your approval.",
+                booking.Id);
+
         // The EP approved: studio crew comes from the roster, outside crew goes to the supervisors.
         if (newStatus == BookingStatus.CrewAssignment)
             await services.CrewProgress.OpenAsync(booking, caller.UserId);

@@ -41,6 +41,7 @@ public static class SignIn
             builder.Services.AddSingleton(devTokens);
             auth.AddJwtBearer(options =>
             {
+                TakeTokenFromHubAddress(options);
                 options.MapInboundClaims = false; // keep claim names as written in the token ("email")
                 options.TokenValidationParameters = devTokens.ValidationParameters;
             });
@@ -54,6 +55,7 @@ public static class SignIn
 
             auth.AddJwtBearer(options =>
             {
+                TakeTokenFromHubAddress(options);
                 options.MapInboundClaims = false;
                 // Microsoft publishes the keys its tokens are signed with here; the API fetches them itself.
                 options.Authority = $"https://login.microsoftonline.com/{tenantId}/v2.0";
@@ -83,6 +85,21 @@ public static class SignIn
                 .RequireClaim(PbrmsClaims.UserId)
                 .Build());
     }
+
+    /// <summary>
+    /// Browsers can't set a header on a WebSocket, so the live connection sends its token in
+    /// the address instead. Only /hubs accepts this, so tokens don't end up in ordinary URLs.
+    /// </summary>
+    private static void TakeTokenFromHubAddress(JwtBearerOptions options) =>
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                if (context.Request.Path.StartsWithSegments("/hubs") && context.Request.Query["access_token"] is { Count: > 0 } token)
+                    context.Token = token;
+                return Task.CompletedTask;
+            }
+        };
 
     private static string Required(IConfiguration config, string key) =>
         config[key] is { Length: > 0 } value

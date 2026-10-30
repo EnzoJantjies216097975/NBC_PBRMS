@@ -6,12 +6,22 @@ using Microsoft.EntityFrameworkCore;
 using PBRMS.Api;
 using PBRMS.Api.Auth;
 using PBRMS.Api.Endpoints;
+using PBRMS.Api.Live;
+using Microsoft.AspNetCore.SignalR;
 using PBRMS.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<PbrmsDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("Pbrms")));
+builder.Services.AddDbContext<PbrmsDbContext>((services, options) => options
+    .UseSqlServer(builder.Configuration.GetConnectionString("Pbrms"))
+    .AddInterceptors(services.GetRequiredService<LivePushOnSave>(), services.GetRequiredService<LivePushOnCommit>()));
+
+// Live updates to open screens (see Live/LiveHub.cs).
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IUserIdProvider, PbrmsUserIdProvider>();
+builder.Services.AddScoped<LivePush>();
+builder.Services.AddScoped<LivePushOnSave>();
+builder.Services.AddScoped<LivePushOnCommit>();
 
 builder.Services.AddScoped<ClashChecker>();
 builder.Services.AddScoped<Notifier>();
@@ -70,6 +80,7 @@ app.MapOffRosterEndpoints();
 app.MapConfirmationEndpoints();
 app.MapDailyRosterEndpoints();
 app.MapAppSessionEndpoints();
+app.MapHub<LiveHub>("/hubs/live");
 
 if (SignIn.IsDevelopmentMode(app.Configuration))
     app.MapDevLoginEndpoints();

@@ -170,6 +170,19 @@ A confirmed session counts as the operator being busy, and shows on the daily ro
 `GET /reports/app-usage?from=&to=` shows supervisors, the TV Operations Manager and Admin which
 productions, editors and producers used APP.
 
+## Live updates
+
+The apps keep a SignalR connection open to `/hubs/live`, so changes reach open screens straight
+away. Send the sign-in token as usual; browsers pass it as `?access_token=` because they can't
+set a header on a WebSocket. Two messages arrive:
+
+- `notification`: a new notification, for that person only.
+- `bookingChanged`: a booking changed, to everyone. It gives only the booking's id, and the app
+  refreshes its own queue, so each person still sees only what they're allowed to.
+
+Messages go out only after the change is committed. On IIS, turn on the WebSocket Protocol feature,
+or SignalR falls back to slower long polling.
+
 ## Run the tests
 
 ```
