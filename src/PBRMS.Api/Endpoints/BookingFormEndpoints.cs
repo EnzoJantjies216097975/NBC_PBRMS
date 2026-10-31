@@ -125,6 +125,8 @@ public static class BookingFormEndpoints
         MaxLength("allocationCode", form.AllocationCode, 30);
         MaxLength("notes", form.Notes, 2000);
 
+        if (form.Venue == Venue.App)
+            Error("venue", BookingWorkflow.AppIsBookedDirectly);
         if (form.EndsAt <= form.StartsAt)
             Error("endsAt", "The end must be after the start.");
         if (form.CallAt > form.StartsAt)

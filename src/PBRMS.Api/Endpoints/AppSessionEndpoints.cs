@@ -23,6 +23,8 @@ public static class AppSessionEndpoints
 
     public record AppOperatorResponse(Guid Id, string Name);
 
+    public record AppBusyTime(DateTimeOffset StartsAt, DateTimeOffset EndsAt, string Operator);
+
     public record AppUsageRow(string Production, string Requester, Role RequesterRole, string Operator, DateTimeOffset StartsAt, DateTimeOffset EndsAt, int Minutes);
 
     public record AppUsageTotal(string Name, int Sessions, int Minutes);
@@ -36,6 +38,7 @@ public static class AppSessionEndpoints
         var bookingOfficer = nameof(Role.BookingOfficer);
 
         app.MapGet("/app-operators", AppOperators).RequireAuthorization();
+        app.MapGet("/app-room/busy", RoomBusy).RequireAuthorization();
         app.MapPost("/app-sessions", Request).RequireAuthorization(p => p.RequireRole(requesters));
         app.MapGet("/app-sessions/mine", Mine).RequireAuthorization();
         app.MapGet("/app-sessions/queue", WaitingForATime).RequireAuthorization(p => p.RequireRole(bookingOfficer));
@@ -56,7 +59,22 @@ public static class AppSessionEndpoints
             .Select(r => new AppOperatorResponse(r.UserId, r.User.FirstName + " " + r.User.Surname))
             .ToListAsync();
 
-    private static async Task<IResult> Request(AppSessionForm form, ClaimsPrincipal principal, PbrmsDbContext db, Notifier notifier)
+    /// <summary>
+    /// When the room is taken, so people can pick a free time and book it, rather than
+    /// walking in on an operator who has had no time to plan or finish their work.
+    /// </summary>
+    private static async Task<List<AppBusyTime>> RoomBusy(DateOnly from, DateOnly to, PbrmsDbContext db)
+    {
+        var (start, end) = (NbcTime.At(from, TimeOnly.MinValue), NbcTime.At(to.AddDays(1), TimeOnly.MinValue));
+
+        return await db.AppSessions.AsNoTracking()
+            .Where(s => s.Status == AppSessionStatus.Confirmed && s.StartsAt < end && start < s.EndsAt)
+            .OrderBy(s => s.StartsAt)
+            .Select(s => new AppBusyTime(s.StartsAt, s.EndsAt, s.Operator.FirstName + " " + s.Operator.Surname))
+            .ToListAsync();
+    }
+
+    private static async Task<IResult> Request(AppSessionForm form, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker, Notifier notifier)
     {
         if (string.IsNullOrWhiteSpace(form.Production) || form.Production.Trim().Length > 160)
             return Problems.Invalid("production", "Name the production in up to 160 characters.");
@@ -66,6 +84,11 @@ public static class AppSessionEndpoints
             return Problems.Invalid("note", "Keep the note to 500 characters.");
         if (!await db.RoleAssignments.AnyAsync(r => r.UserId == form.OperatorId && r.Role == Role.AppOperator && r.User.IsActive))
             return Problems.Invalid("operatorId", "That person isn't an active APP operator.");
+
+        // Say so now rather than after the operator has looked at it.
+        var taken = await clashChecker.AppRoomAsync(form.StartsAt, form.EndsAt);
+        if (taken.Count > 0)
+            return Problems.Clashes("The APP room is booked at that time. See GET /app-room/busy for when it's free.", taken);
 
         var session = new AppSession
         {
@@ -245,14 +268,19 @@ public static class AppSessionEndpoints
             .ToList();
 
     /// <summary>
-    /// Is the operator booked at that time? Returns the problem if so. A day off is only a
-    /// warning elsewhere, so it doesn't stop an APP session either. Takes the operator's clash
-    /// lock when there's a transaction, so two confirmations can't both pass.
+    /// Is the APP room or the operator booked at that time? Returns the problem if so. NBC
+    /// has one room, so a session clashes with any other, whichever operator is on it. A day
+    /// off is only a warning elsewhere, so it doesn't stop a session either. Takes the clash
+    /// locks when there's a transaction, so two confirmations can't both pass.
     /// </summary>
     private static async Task<IResult?> BusyAsync(AppSession session, DateTimeOffset from, DateTimeOffset to, PbrmsDbContext db, ClashChecker clashChecker)
     {
         if (db.Database.CurrentTransaction is not null)
-            await ClashLocks.TakeAsync(db, [ClashLocks.ForOperator(session.OperatorId)]);
+            await ClashLocks.TakeAsync(db, [ClashLocks.ForOperator(session.OperatorId), ClashLocks.ForVenue(Venue.App)]);
+
+        var room = await clashChecker.AppRoomAsync(from, to);
+        if (room.Count > 0)
+            return Problems.Clashes("The APP room is booked at that time.", room);
 
         var clashes = await clashChecker.ForOperatorAsync(session.OperatorId, from, to);
         var blocking = clashes.Where(c => !c.IsWarning).ToList();

@@ -66,6 +66,16 @@ public class ClashChecker(PbrmsDbContext db)
             .ToList();
     }
 
+    /// <summary>Confirmed sessions in the APP room at that time, whichever operator is on them. NBC has one room.</summary>
+    public async Task<List<Clash>> AppRoomAsync(DateTimeOffset from, DateTimeOffset to) =>
+        await db.AppSessions
+            .AsNoTracking()
+            .Where(s => s.Status == AppSessionStatus.Confirmed
+                        // Same as ClashRules.Overlaps, written out so SQL Server can run it.
+                        && s.StartsAt < to && from < s.EndsAt)
+            .Select(s => new Clash(ClashKind.Venue, "APP room", null, s.Production, s.StartsAt, s.EndsAt, null))
+            .ToListAsync();
+
     /// <summary>Confirmed APP sessions: the operator is busy then, like on a production.</summary>
     private async Task<List<Clash>> AppSessionsAsync(Guid operatorId, DateTimeOffset from, DateTimeOffset to) =>
         await db.AppSessions

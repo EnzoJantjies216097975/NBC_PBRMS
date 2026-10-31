@@ -296,6 +296,10 @@ Content-Type: application/json
 GET {{api}}/app-operators
 Authorization: Bearer {{editor.response.body.token}}
 
+### When the APP room is taken, to pick a free time before booking.
+GET {{api}}/app-room/busy?from={{day}}&to={{day}}
+Authorization: Bearer {{editor.response.body.token}}
+
 ### A1. The editor books the APP operator directly. Status: Requested.
 # @name session
 POST {{api}}/app-sessions

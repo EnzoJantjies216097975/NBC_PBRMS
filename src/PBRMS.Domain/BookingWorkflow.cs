@@ -121,6 +121,13 @@ public static class BookingWorkflow
     public static DateTimeOffset CrewDeadline(DateTimeOffset startsAt) =>
         NbcTime.At(NbcTime.DateOf(startsAt).AddDays(-1), DailyRosterTime);
 
+    /// <summary>
+    /// NBC has one APP room, so there is one way to book it: an APP booking (see
+    /// <see cref="AppSession"/>). A normal booking in APP couldn't see those, and the room
+    /// would be double-booked. So <see cref="Venue.App"/> is refused on the booking form.
+    /// </summary>
+    public const string AppIsBookedDirectly = "APP isn't booked here. Book it directly with the APP operator.";
+
     /// <summary>When tomorrow's daily roster is built (TRD, "Daily roster generation").</summary>
     public static readonly TimeOnly DailyRosterTime = new(16, 0);
 

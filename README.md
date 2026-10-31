@@ -161,6 +161,10 @@ is AGPL-3.0. Don't upgrade it without reading the licence; a test fails if the v
 
 APP operators work directly with producers and editors, so these skip the approval chain (BR-12):
 
+NBC has one APP room, so this is the only way to book it: `App` is refused as a venue on the normal
+booking form. Sessions can't overlap, whichever operator is on them. `GET /app-room/busy?from=&to=`
+shows when the room is taken, so people can pick a free time rather than walking in.
+
 1. A producer or editor books an operator: `POST /app-sessions`. `GET /app-operators` lists them.
 2. The APP operator agrees: `POST /app-sessions/{id}/confirm`. They can't confirm over a production or another session.
 3. Or they can't do that time: `POST /app-sessions/{id}/unavailable`. It goes to the Booking Officer (`GET /app-sessions/queue`).

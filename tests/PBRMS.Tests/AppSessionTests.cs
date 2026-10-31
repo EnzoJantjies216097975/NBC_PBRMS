@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
 using PBRMS.Domain;
 using static PBRMS.Api.Endpoints.AppSessionEndpoints;
 using static PBRMS.Tests.TestSteps;
@@ -111,6 +112,82 @@ public class AppSessionTests(TestApi api)
     }
 
     [Fact]
+    public async Task The_room_can_only_hold_one_session_whichever_operator_is_on_it()
+    {
+        var day = NewAppDay();
+        var (firstOperator, secondOperator) = await TwoAppOperatorsAsync();
+        var first = await RequestWithAsync(firstOperator, day);
+        var second = await RequestWithAsync(secondOperator, day.AddMinutes(30));
+        await PostOkAsync(OperatorEmail(firstOperator), first.Id, "confirm");
+        var client = await api.SignedInClientAsync(OperatorEmail(secondOperator));
+
+        var response = await client.PostAsync($"/app-sessions/{second.Id}/confirm", null);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("APP room", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Booking_a_time_the_room_is_taken_is_refused_straight_away()
+    {
+        var day = NewAppDay();
+        var first = await RequestAsync(Editor, day);
+        await PostOkAsync(AppOperator, first.Id, "confirm");
+
+        var response = await SendRequestAsync("producer@pbrms.test", day.AddHours(1));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Anyone_can_see_when_the_room_is_taken_so_they_can_pick_a_free_time()
+    {
+        var day = NewAppDay();
+        var session = await RequestAsync(Editor, day);
+        await PostOkAsync(AppOperator, session.Id, "confirm");
+        await RequestAsync(Editor, day.AddHours(4));
+        var client = await api.SignedInClientAsync("producer@pbrms.test");
+
+        var busy = await client.GetFromJsonAsync<List<AppBusyTime>>($"/app-room/busy?from={day:yyyy-MM-dd}&to={day:yyyy-MM-dd}", Json);
+
+        Assert.Equal(day, Assert.Single(busy!).StartsAt);
+    }
+
+    [Fact]
+    public async Task APP_cant_be_booked_on_the_normal_booking_form()
+    {
+        var day = NewAppDay();
+        var units = await api.UnitsAsync();
+        var producer = await api.SignedInClientAsync("producer@pbrms.test");
+
+        var response = await producer.PostAsJsonAsync("/bookings", new
+        {
+            title = "Voice-over",
+            departmentId = units["News"],
+            activityType = "Editing",
+            venue = "App",
+            callAt = day,
+            startsAt = day,
+            endsAt = day.AddHours(1)
+        }, Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("APP operator", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task The_booking_officer_cant_move_a_production_into_the_APP_room()
+    {
+        var booking = await api.AtFinalisationAsync(NewAppDay(), Venue.Studio1);
+        var officer = await api.SignedInClientAsync(BookingOfficer);
+
+        var response = await officer.PutAsJsonAsync($"/bookings/{booking.Id}/schedule",
+            new PBRMS.Api.Endpoints.ScheduleRequest(Venue.App, null, booking.CallAt, booking.StartsAt, booking.EndsAt), Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task A_confirmed_session_is_on_the_daily_roster()
     {
         var day = NewAppDay();
@@ -173,11 +250,37 @@ public class AppSessionTests(TestApi api)
     private static DateTimeOffset NewAppDay() =>
         new DateTimeOffset(2036, 1, 1, 10, 0, 0, NbcTime.Offset).AddDays(Interlocked.Increment(ref dayCounter));
 
+    /// <summary>The sample APP operator, found by email because some tests add more.</summary>
     private async Task<Guid> AppOperatorIdAsync()
     {
+        Guid id = default;
+        await api.WithDatabaseAsync(async db =>
+        {
+            id = await db.Users.Where(u => u.WorkEmail == AppOperator).Select(u => u.Id).SingleAsync();
+        });
+        return id;
+    }
+
+    /// <summary>Two new APP operators, for the times NBC has a second one in.</summary>
+    private async Task<(Guid, Guid)> TwoAppOperatorsAsync()
+    {
+        var (first, second) = (await api.NewOperatorAsync("Sound"), await api.NewOperatorAsync("Sound"));
+        await api.WithDatabaseAsync(async db =>
+        {
+            db.RoleAssignments.AddRange(
+                new RoleAssignment { UserId = first, Role = Role.AppOperator },
+                new RoleAssignment { UserId = second, Role = Role.AppOperator });
+            await db.SaveChangesAsync();
+        });
+        return (first, second);
+    }
+
+    private async Task<AppSessionResponse> RequestWithAsync(Guid operatorId, DateTimeOffset start)
+    {
         var client = await api.SignedInClientAsync(Editor);
-        var operators = await client.GetFromJsonAsync<List<AppOperatorResponse>>("/app-operators", Json);
-        return Assert.Single(operators!).Id;
+        var response = await client.PostAsJsonAsync("/app-sessions", new AppSessionForm(operatorId, $"Voice-over {start:HHmm}", start, start.AddHours(2), null), Json);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<AppSessionResponse>(Json))!;
     }
 
     private async Task<HttpResponseMessage> SendRequestAsync(string email, DateTimeOffset start, string production = "")

@@ -39,6 +39,8 @@ public static class BookingFinalisationEndpoints
 
         if (booking.Status != BookingStatus.Finalisation)
             return Problems.Conflict($"Only bookings at Finalisation can be moved, and this one is in {booking.Status}.");
+        if (request.Venue == Venue.App)
+            return Problems.Invalid("venue", BookingWorkflow.AppIsBookedDirectly);
         if (request.EndsAt <= request.StartsAt)
             return Problems.Invalid("endsAt", "The end must be after the start.");
         if (request.CallAt > request.StartsAt)
