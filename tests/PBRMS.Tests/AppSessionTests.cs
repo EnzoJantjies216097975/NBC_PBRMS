@@ -188,6 +188,78 @@ public class AppSessionTests(TestApi api)
     }
 
     [Fact]
+    public async Task A_walk_in_is_confirmed_straight_away_with_nothing_for_the_operator_to_do()
+    {
+        var operatorId = await AppOperatorIdAsync();
+
+        var walkIn = await WalkInOkAsync(operatorId, "Urgent News edit");
+
+        Assert.Equal(AppSessionStatus.Confirmed, walkIn.Status);
+        Assert.True(walkIn.IsWalkIn);
+        Assert.Contains(await api.NotificationsAsync(AppOperator), n => n.Text.Contains("Urgent News edit") && n.Text.Contains("in APP now"));
+        Assert.DoesNotContain(await api.NotificationsAsync(AppOperator), n => n.Text.Contains("Urgent News edit") && n.Text.Contains("Please confirm"));
+
+        await PostOkAsync(Editor, walkIn.Id, "finish");
+    }
+
+    [Fact]
+    public async Task Other_producers_can_see_APP_is_busy_right_now_and_until_when()
+    {
+        var walkIn = await WalkInOkAsync(await AppOperatorIdAsync(), "Sports promo");
+        var otherProducer = await api.SignedInClientAsync("producer.sports@pbrms.test");
+
+        var busy = await otherProducer.GetFromJsonAsync<AppRoomStatus>("/app-room/status", Json);
+        Assert.True(busy!.Busy);
+        Assert.Equal("Sports promo", busy.Production);
+        Assert.Equal(walkIn.EndsAt, busy.Until);
+
+        // The person using the room says they've finished, and it shows free straight away.
+        await PostOkAsync(Editor, walkIn.Id, "finish");
+
+        var free = await otherProducer.GetFromJsonAsync<AppRoomStatus>("/app-room/status", Json);
+        Assert.False(free!.Busy);
+    }
+
+    [Fact]
+    public async Task A_walk_in_is_refused_if_the_room_is_taken()
+    {
+        var operatorId = await AppOperatorIdAsync();
+        var first = await WalkInOkAsync(operatorId, "First in");
+        var second = await api.SignedInClientAsync("producer@pbrms.test");
+
+        var response = await second.PostAsJsonAsync("/app-sessions/walk-in", new AppWalkInForm(operatorId, "Second in", DateTimeOffset.UtcNow.AddHours(1), null), Json);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        await PostOkAsync(Editor, first.Id, "finish");
+    }
+
+    [Fact]
+    public async Task Only_the_person_who_booked_can_finish_a_session_not_the_operator()
+    {
+        var walkIn = await WalkInOkAsync(await AppOperatorIdAsync(), "Not the operator's job");
+        var appOperator = await api.SignedInClientAsync(AppOperator);
+
+        var response = await appOperator.PostAsync($"/app-sessions/{walkIn.Id}/finish", null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await PostOkAsync(Editor, walkIn.Id, "finish");
+    }
+
+    [Fact]
+    public async Task Walk_ins_show_in_the_report()
+    {
+        var day = DateTimeOffset.UtcNow.ToOffset(NbcTime.Offset);
+        var walkIn = await WalkInOkAsync(await AppOperatorIdAsync(), $"Walk-in {Guid.NewGuid():N}"[..20]);
+        var manager = await api.SignedInClientAsync("tvops.manager@pbrms.test");
+
+        var report = await manager.GetFromJsonAsync<AppUsageReport>($"/reports/app-usage?from={day:yyyy-MM-dd}&to={day.AddDays(1):yyyy-MM-dd}", Json);
+
+        Assert.True(report!.Sessions.Single(s => s.Production == walkIn.Production).WalkIn);
+        Assert.Equal(1, report.ByProduction.Single(t => t.Name == walkIn.Production).WalkIns);
+        await PostOkAsync(Editor, walkIn.Id, "finish");
+    }
+
+    [Fact]
     public async Task A_confirmed_session_is_on_the_daily_roster()
     {
         var day = NewAppDay();
@@ -259,6 +331,15 @@ public class AppSessionTests(TestApi api)
             id = await db.Users.Where(u => u.WorkEmail == AppOperator).Select(u => u.Id).SingleAsync();
         });
         return id;
+    }
+
+    /// <summary>The editor checks in to the room now. Each test finishes it, so the next finds the room free.</summary>
+    private async Task<AppSessionResponse> WalkInOkAsync(Guid operatorId, string production)
+    {
+        var client = await api.SignedInClientAsync(Editor);
+        var response = await client.PostAsJsonAsync("/app-sessions/walk-in", new AppWalkInForm(operatorId, production, DateTimeOffset.UtcNow.AddHours(1), null), Json);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<AppSessionResponse>(Json))!;
     }
 
     /// <summary>Two new APP operators, for the times NBC has a second one in.</summary>

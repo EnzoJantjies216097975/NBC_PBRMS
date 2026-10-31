@@ -300,6 +300,26 @@ Authorization: Bearer {{editor.response.body.token}}
 GET {{api}}/app-room/busy?from={{day}}&to={{day}}
 Authorization: Bearer {{editor.response.body.token}}
 
+### Is APP busy right now? Anyone signed in can ask.
+GET {{api}}/app-room/status
+Authorization: Bearer {{producer.response.body.token}}
+
+### Need the room now? Check yourself in. Confirmed straight away if it's free. Set a finish time later than now.
+# @name walkIn
+POST {{api}}/app-sessions/walk-in
+Authorization: Bearer {{editor.response.body.token}}
+Content-Type: application/json
+
+{
+  "operatorId": "{{appOperators.response.body.$[0].id}}",
+  "production": "Urgent News edit",
+  "endsAt": "2030-01-01T17:00:00+02:00"
+}
+
+### Finished early: the room shows free straight away.
+POST {{api}}/app-sessions/{{walkIn.response.body.id}}/finish
+Authorization: Bearer {{editor.response.body.token}}
+
 ### A1. The editor books the APP operator directly. Status: Requested.
 # @name session
 POST {{api}}/app-sessions

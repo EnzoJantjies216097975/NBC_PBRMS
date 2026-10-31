@@ -10,6 +10,7 @@ namespace PBRMS.Api.Live;
 /// screens straight away (TRD: "within 3 s"). The apps only listen:
 ///
 ///   "notification"   A new notification for this person only: <see cref="LiveNotification"/>.
+///   "appRoomChanged" The APP room's bookings changed, sent to everyone: refresh /app-room/status.
 ///   "bookingChanged" Some booking changed, sent to everyone: <see cref="LiveBookingChange"/>.
 ///                    It says only which booking, and the app refreshes its own queue, so
 ///                    each person still sees only what the API allows them to.

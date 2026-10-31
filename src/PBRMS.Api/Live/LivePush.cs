@@ -9,7 +9,7 @@ namespace PBRMS.Api.Live;
 
 /// <summary>
 /// Sends live updates for whatever the database just saved, so no endpoint has to remember
-/// to. It watches for new notifications and changed bookings.
+/// to. It watches for new notifications, changed bookings and changes to APP sessions.
 ///
 /// Updates go out only after the data is really committed: an app refreshing on the message
 /// must find the new data, and nobody must hear about a change that was rolled back. One per request.
@@ -19,6 +19,7 @@ public class LivePush(IHubContext<LiveHub> hub, ILogger<LivePush> logger)
     private readonly List<LiveNotification> notifications = [];
     private readonly Dictionary<Guid, Guid> notificationUsers = [];
     private readonly HashSet<Guid> bookings = [];
+    private bool appRoomChanged;
 
     /// <summary>Notes what's about to be saved. The ids exist by now; the messages wait for the commit.</summary>
     public void Collect(DbContext context)
@@ -32,6 +33,8 @@ public class LivePush(IHubContext<LiveHub> hub, ILogger<LivePush> logger)
 
         foreach (var entry in context.ChangeTracker.Entries<Booking>().Where(e => e.State is EntityState.Added or EntityState.Modified))
             bookings.Add(entry.Entity.Id);
+
+        appRoomChanged |= context.ChangeTracker.Entries<AppSession>().Any(e => e.State is EntityState.Added or EntityState.Modified);
     }
 
     /// <summary>Sends everything collected. A failed push must never fail the save behind it: apps also refresh on opening.</summary>
@@ -44,6 +47,9 @@ public class LivePush(IHubContext<LiveHub> hub, ILogger<LivePush> logger)
 
             foreach (var booking in bookings)
                 await hub.Clients.All.SendAsync("bookingChanged", new LiveBookingChange(booking));
+
+            if (appRoomChanged)
+                await hub.Clients.All.SendAsync("appRoomChanged");
         }
         catch (Exception error)
         {
@@ -53,6 +59,7 @@ public class LivePush(IHubContext<LiveHub> hub, ILogger<LivePush> logger)
         notifications.Clear();
         notificationUsers.Clear();
         bookings.Clear();
+        appRoomChanged = false;
     }
 }
 

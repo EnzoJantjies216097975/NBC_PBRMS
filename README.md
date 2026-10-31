@@ -171,6 +171,16 @@ shows when the room is taken, so people can pick a free time rather than walking
 4. The Booking Officer suggests a time the operator is free: `POST /app-sessions/{id}/suggest-time`.
 5. The producer or editor takes it with `POST /app-sessions/{id}/accept`, or calls it off with `/cancel`.
 
+**Is APP busy right now?** `GET /app-room/status` tells anyone signed in whether the room is in use,
+for which production, until when, and when the next session starts. Open screens hear
+`appRoomChanged` as soon as it changes. Keeping this right is never the operator's job:
+
+- Someone who needs the room now checks themselves in: `POST /app-sessions/walk-in`. If the room is
+  free it's confirmed straight away, and the operator is told but has nothing to do. Walk-ins are
+  marked in the report, with a count per production and per person.
+- They mark it finished with `POST /app-sessions/{id}/finish`, so it shows free. If they forget, it
+  frees itself at the time they gave.
+
 A confirmed session counts as the operator being busy, and shows on the daily roster.
 `GET /reports/app-usage?from=&to=` shows supervisors, the TV Operations Manager and Admin which
 productions, editors and producers used APP.

@@ -89,6 +89,24 @@ public class LiveUpdateTests(TestApi api)
         Assert.Equal(HttpStatusCode.OK, withToken.StatusCode);
     }
 
+    [Fact]
+    public async Task Open_screens_hear_when_the_APP_room_changes()
+    {
+        await using var producer = await ConnectAsync("producer.sports@pbrms.test");
+        var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        producer.On("appRoomChanged", () => changed.TrySetResult());
+        var operators = await (await api.SignedInClientAsync("editor@pbrms.test")).GetFromJsonAsync<List<OperatorRow>>("/app-operators", Json);
+
+        var editor = await api.SignedInClientAsync("editor@pbrms.test");
+        var start = NewDay();
+        var response = await editor.PostAsJsonAsync("/app-sessions", new { operatorId = operators![0].Id, production = "Live check", startsAt = start, endsAt = start.AddHours(1) }, Json);
+        response.EnsureSuccessStatusCode();
+
+        await changed.Task.WaitAsync(Patience);
+    }
+
+    private record OperatorRow(Guid Id);
+
     // ---- Helpers ----
 
     private async Task<BookingResponseLite> DraftAsync()

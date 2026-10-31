@@ -19,15 +19,21 @@ public static class AppSessionEndpoints
 
     public record AppSessionResponse(
         Guid Id, string Production, string Requester, string Operator, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
-        AppSessionStatus Status, string? Note, DateTimeOffset? SuggestedStartsAt, DateTimeOffset? SuggestedEndsAt);
+        AppSessionStatus Status, string? Note, DateTimeOffset? SuggestedStartsAt, DateTimeOffset? SuggestedEndsAt, bool IsWalkIn);
 
     public record AppOperatorResponse(Guid Id, string Name);
 
     public record AppBusyTime(DateTimeOffset StartsAt, DateTimeOffset EndsAt, string Operator);
 
-    public record AppUsageRow(string Production, string Requester, Role RequesterRole, string Operator, DateTimeOffset StartsAt, DateTimeOffset EndsAt, int Minutes);
+    /// <summary>Checking in to the room now. EndsAt is when they expect to finish.</summary>
+    public record AppWalkInForm(Guid OperatorId, string Production, DateTimeOffset EndsAt, string? Note);
 
-    public record AppUsageTotal(string Name, int Sessions, int Minutes);
+    /// <summary>Is the room in use right now? The details are empty when it's free. NextStartsAt is the next session after this one.</summary>
+    public record AppRoomStatus(bool Busy, string? Production, string? BookedBy, string? Operator, DateTimeOffset? Until, DateTimeOffset? NextStartsAt);
+
+    public record AppUsageRow(string Production, string Requester, Role RequesterRole, string Operator, DateTimeOffset StartsAt, DateTimeOffset EndsAt, int Minutes, bool WalkIn);
+
+    public record AppUsageTotal(string Name, int Sessions, int Minutes, int WalkIns);
 
     /// <summary>Every confirmed session, with totals by production and by the person who asked.</summary>
     public record AppUsageReport(List<AppUsageRow> Sessions, List<AppUsageTotal> ByProduction, List<AppUsageTotal> ByRequester);
@@ -39,6 +45,9 @@ public static class AppSessionEndpoints
 
         app.MapGet("/app-operators", AppOperators).RequireAuthorization();
         app.MapGet("/app-room/busy", RoomBusy).RequireAuthorization();
+        app.MapGet("/app-room/status", RoomStatus).RequireAuthorization();
+        app.MapPost("/app-sessions/walk-in", WalkIn).RequireAuthorization(p => p.RequireRole(requesters));
+        app.MapPost("/app-sessions/{id:guid}/finish", Finish).RequireAuthorization();
         app.MapPost("/app-sessions", Request).RequireAuthorization(p => p.RequireRole(requesters));
         app.MapGet("/app-sessions/mine", Mine).RequireAuthorization();
         app.MapGet("/app-sessions/queue", WaitingForATime).RequireAuthorization(p => p.RequireRole(bookingOfficer));
@@ -72,6 +81,99 @@ public static class AppSessionEndpoints
             .OrderBy(s => s.StartsAt)
             .Select(s => new AppBusyTime(s.StartsAt, s.EndsAt, s.Operator.FirstName + " " + s.Operator.Surname))
             .ToListAsync();
+    }
+
+    /// <summary>What's happening in the room right now, for any producer or editor wondering whether to go down.</summary>
+    private static async Task<AppRoomStatus> RoomStatus(PbrmsDbContext db)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var sessions = await db.AppSessions.AsNoTracking()
+            .Where(s => s.Status == AppSessionStatus.Confirmed && s.EndsAt > now)
+            .OrderBy(s => s.StartsAt)
+            .Take(2)
+            .Select(s => new
+            {
+                s.Production,
+                BookedBy = s.Requester.FirstName + " " + s.Requester.Surname,
+                Operator = s.Operator.FirstName + " " + s.Operator.Surname,
+                s.StartsAt,
+                s.EndsAt
+            })
+            .ToListAsync();
+
+        var current = sessions.FirstOrDefault(s => s.StartsAt <= now);
+        var next = sessions.FirstOrDefault(s => s.StartsAt > now);
+
+        return new AppRoomStatus(current is not null, current?.Production, current?.BookedBy, current?.Operator, current?.EndsAt, next?.StartsAt);
+    }
+
+    /// <summary>
+    /// A producer or editor needs the room now and checks themselves in. If it's free the
+    /// session is confirmed straight away. The operator is told but doesn't have to do
+    /// anything: keeping the room's status right mustn't become the operator's job.
+    /// </summary>
+    private static async Task<IResult> WalkIn(AppWalkInForm form, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker, Notifier notifier)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        if (string.IsNullOrWhiteSpace(form.Production) || form.Production.Trim().Length > 160)
+            return Problems.Invalid("production", "Name the production in up to 160 characters.");
+        if (form.EndsAt <= now)
+            return Problems.Invalid("endsAt", "Say when you expect to finish.");
+        if (form.Note?.Trim().Length > 500)
+            return Problems.Invalid("note", "Keep the note to 500 characters.");
+        if (!await db.RoleAssignments.AnyAsync(r => r.UserId == form.OperatorId && r.Role == Role.AppOperator && r.User.IsActive))
+            return Problems.Invalid("operatorId", "That person isn't an active APP operator.");
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+
+        var session = new AppSession
+        {
+            Production = form.Production.Trim(),
+            RequesterId = PbrmsClaims.UserIdOf(principal),
+            OperatorId = form.OperatorId,
+            StartsAt = now,
+            EndsAt = form.EndsAt,
+            Note = form.Note?.Trim(),
+            Status = AppSessionStatus.Confirmed,
+            IsWalkIn = true,
+            CreatedAt = now,
+            ConfirmedAt = now
+        };
+
+        if (await BusyAsync(session, now, form.EndsAt, db, clashChecker) is { } busy)
+            return busy;
+
+        db.AppSessions.Add(session);
+        notifier.Send([session.OperatorId], $"{session.Production} is in APP now, until {NbcTime.Text(session.EndsAt)}.");
+
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        return Results.Created($"/app-sessions/{session.Id}", await LoadAsync(db, session.Id));
+    }
+
+    /// <summary>
+    /// The person using the room says they've finished, so it shows as free. If they forget,
+    /// it frees itself at the time they gave. The Booking Officer can do this for them.
+    /// </summary>
+    private static async Task<IResult> Finish(Guid id, ClaimsPrincipal principal, PbrmsDbContext db)
+    {
+        var session = await db.AppSessions.FirstOrDefaultAsync(s => s.Id == id);
+        if (session is null)
+            return Results.NotFound();
+
+        var caller = await Caller.LoadAsync(principal, db);
+        if (session.RequesterId != caller.UserId && !caller.Holds(Role.BookingOfficer))
+            return Problems.Forbidden("Only the person who booked this session or the Booking Officer can finish it.");
+
+        var now = DateTimeOffset.UtcNow;
+        if (session.Status != AppSessionStatus.Confirmed || session.StartsAt > now || session.EndsAt <= now)
+            return Problems.Conflict("This session isn't running now.");
+
+        session.EndsAt = now;
+        return await SaveAsync(id, db);
     }
 
     private static async Task<IResult> Request(AppSessionForm form, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker, Notifier notifier)
@@ -246,6 +348,7 @@ public static class AppSessionEndpoints
                 s.Production,
                 Requester = s.Requester.FirstName + " " + s.Requester.Surname,
                 IsEditor = s.Requester.Roles.Any(r => r.Role == Role.Editor),
+                s.IsWalkIn,
                 Operator = s.Operator.FirstName + " " + s.Operator.Surname,
                 s.StartsAt,
                 s.EndsAt
@@ -255,7 +358,7 @@ public static class AppSessionEndpoints
         var rows = sessions
             .Select(s => new AppUsageRow(
                 s.Production, s.Requester, s.IsEditor ? Role.Editor : Role.Producer, s.Operator,
-                s.StartsAt, s.EndsAt, (int)(s.EndsAt - s.StartsAt).TotalMinutes))
+                s.StartsAt, s.EndsAt, (int)(s.EndsAt - s.StartsAt).TotalMinutes, s.IsWalkIn))
             .ToList();
 
         return new AppUsageReport(rows, Totals(rows, r => r.Production), Totals(rows, r => r.Requester));
@@ -263,7 +366,7 @@ public static class AppSessionEndpoints
 
     private static List<AppUsageTotal> Totals(List<AppUsageRow> rows, Func<AppUsageRow, string> key) =>
         rows.GroupBy(key)
-            .Select(g => new AppUsageTotal(g.Key, g.Count(), g.Sum(r => r.Minutes)))
+            .Select(g => new AppUsageTotal(g.Key, g.Count(), g.Sum(r => r.Minutes), g.Count(r => r.WalkIn)))
             .OrderByDescending(t => t.Minutes)
             .ToList();
 
@@ -327,7 +430,7 @@ public static class AppSessionEndpoints
         s.Id, s.Production,
         s.Requester.FirstName + " " + s.Requester.Surname,
         s.Operator.FirstName + " " + s.Operator.Surname,
-        s.StartsAt, s.EndsAt, s.Status, s.Note, s.SuggestedStartsAt, s.SuggestedEndsAt);
+        s.StartsAt, s.EndsAt, s.Status, s.Note, s.SuggestedStartsAt, s.SuggestedEndsAt, s.IsWalkIn);
 
     private static Task<AppSessionResponse> LoadAsync(PbrmsDbContext db, Guid id) =>
         Sessions(db).Where(s => s.Id == id).Select(Show).SingleAsync();

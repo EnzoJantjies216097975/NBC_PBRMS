@@ -36,6 +36,13 @@ public class AppSession
     public Guid? SuggestedById { get; set; }
     public User? SuggestedBy { get; set; }
 
+    /// <summary>
+    /// The producer or editor needed the room there and then, and checked themselves in. It
+    /// is confirmed without the operator doing anything, so the room shows as busy and the
+    /// session still counts in the report, with no extra work for the operator.
+    /// </summary>
+    public bool IsWalkIn { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? ConfirmedAt { get; set; }
 
