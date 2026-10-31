@@ -83,7 +83,7 @@ public class BookingWorkflowTests
     }
 
     [Fact]
-    public void Supervisors_decide_outside_crew_and_the_booking_officer_decides_studio_crew()
+    public void Supervisors_can_staff_their_division_anywhere_and_the_booking_officer_can_staff_studios()
     {
         var shoot = DramaBooking(BookingStatus.CrewAssignment);
         var studio = DramaBooking(BookingStatus.CrewAssignment);
@@ -94,7 +94,8 @@ public class BookingWorkflowTests
         Assert.False(BookingWorkflow.MayStaff(shoot, Camera.Id, Holds(Role.BookingOfficer, null), BeforeDeadline));
 
         Assert.True(BookingWorkflow.MayStaff(studio, Camera.Id, Holds(Role.BookingOfficer, null), BeforeDeadline));
-        Assert.False(BookingWorkflow.MayStaff(studio, Camera.Id, Holds(Role.Supervisor, Camera), BeforeDeadline));
+        Assert.True(BookingWorkflow.MayStaff(studio, Camera.Id, Holds(Role.Supervisor, Camera), BeforeDeadline));
+        Assert.False(BookingWorkflow.MayStaff(studio, Camera.Id, Holds(Role.Supervisor, Sound), BeforeDeadline));
     }
 
     [Fact]

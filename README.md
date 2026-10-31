@@ -50,7 +50,7 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `GET /reports/off-roster-work?from=&to=` | Who was booked on a day off or outside their shift. The TV Operations Manager, Management and Admin see everyone; supervisors see their own divisions. Add `divisionId=` for one division. |
 | `GET /notifications` | Your newest notifications |
 | `POST /notifications/{id}/read` | Mark one as read |
-| `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. The Booking Officer for studios, supervisors outside. On a confirmed booking it replaces the operator. |
+| `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. Studio crew: the Booking Officer or the division's supervisor. Outside crew: the division's supervisor. On a confirmed booking it replaces the operator. |
 | `GET /bookings/{id}/clashes` | Everything the booking clashes with |
 | `PUT /bookings/{id}/schedule` | The Booking Officer moves a booking at Finalisation to another studio or time |
 | `GET /org-units/{id}/operators` | Active operators in a division, for the crew picker |
@@ -90,8 +90,8 @@ Producer → Executive Producer → crew → confirmed → production day. After
 
 | | Studio production | Outside or trip |
 | --- | --- | --- |
-| Crew | Filled automatically from the published monthly roster. The Booking Officer books anyone still needed. | Decided by the supervisor of each division it needs. |
-| Who sees it | The Booking Officer | Only those supervisors |
+| Crew | Filled automatically from the published monthly roster. The Booking Officer books anyone still needed, and supervisors can change their division's crew as needed. | Decided by the supervisor of each division it needs. |
+| In whose queue | The Booking Officer's | Only those supervisors' |
 | Confirmed | By the Booking Officer | The moment the last supervisor decides, because they phone their operators first |
 | Operators told | When it's confirmed | When it's confirmed |
 
@@ -118,14 +118,15 @@ A warning comes back as a 409 with `needsAcknowledgement: true`, and nothing is 
 Send the same request again with `"acknowledgeWarnings": true` to go ahead. The Booking
 Officer sees any remaining warnings the same way when confirming.
 
-**Studios take precedence.** Studios are normally filled first, so:
+**Studios are filled first.** Studio bookings must be fulfilled before outside productions can be booked:
 
-- Studio productions come first in a supervisor's queue.
-- Crewing an outside production while a studio at that time is short of crew gives a warning.
-- A studio production can take an operator off an outside production that hasn't started.
-  It's a warning first. Going ahead sends the outside production back to crew assignment,
-  even if it was confirmed, and tells its supervisors, its producer and the Booking Officer.
+- Crewing an outside production is refused while a studio at that time is still short of crew
+  from the same division. The studio is named in the refusal, and it can't be overridden.
+- A studio production can take an operator off an outside production that isn't confirmed yet.
+  It's a warning first. Going ahead tells that production's supervisors and producer.
+- A confirmed outside crew stays: the supervisor has already phoned them.
 - An outside production can never take an operator off a studio, and studios can't take from each other.
+- Studio productions come first in the Booking Officer's queue.
 
 A production still running 30 minutes after its booked end counts as overtime. The
 supervisors of its crew divisions are told once.

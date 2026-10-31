@@ -125,20 +125,30 @@ public static class BookingWorkflow
     public static readonly TimeOnly DailyRosterTime = new(16, 0);
 
     /// <summary>
-    /// May this user put operators on a slot of this division on this booking? Studio crew
-    /// is the Booking Officer's. Outside crew is the division's supervisor's, until the
-    /// daily roster is due: anything still undecided then, the Booking Officer can decide.
+    /// May this user put operators on a slot of this division on this booking? The division's
+    /// supervisor always may, on studio crew as needed too. The Booking Officer may on any
+    /// studio production, and on outside ones once the daily roster is due, to decide
+    /// whatever is still undecided.
     /// </summary>
     public static bool MayStaff(Booking booking, Guid divisionId, IEnumerable<RoleAssignment> userRoles, DateTimeOffset now)
     {
         var division = new HashSet<Guid> { divisionId };
 
-        if (CrewLead(booking.Venue) == Role.BookingOfficer)
-            return HoldsRoleIn(userRoles, Role.BookingOfficer, division);
+        if (HoldsRoleIn(userRoles, Role.Supervisor, division))
+            return true;
 
-        return HoldsRoleIn(userRoles, Role.Supervisor, division)
-               || (now >= CrewDeadline(booking.StartsAt) && HoldsRoleIn(userRoles, Role.BookingOfficer, division));
+        var bookingOfficerMay = CrewLead(booking.Venue) == Role.BookingOfficer || now >= CrewDeadline(booking.StartsAt);
+        return bookingOfficerMay && HoldsRoleIn(userRoles, Role.BookingOfficer, division);
     }
+
+    /// <summary>
+    /// Is this booking's crew in this user's queue? Supervisors may change studio crew, but
+    /// they only need to see outside work: studio bookings queue for the Booking Officer.
+    /// </summary>
+    public static bool IsInCrewQueueOf(Booking booking, IEnumerable<RoleAssignment> userRoles, DateTimeOffset now) =>
+        CrewLead(booking.Venue) == Role.BookingOfficer
+            ? userRoles.Any(r => r.Role == Role.BookingOfficer)
+            : booking.CrewSlots.Any(s => MayStaff(booking, s.DivisionId, userRoles, now));
 
     /// <summary>Does the user hold this role in one of these units, or NBC-wide?</summary>
     public static bool HoldsRoleIn(IEnumerable<RoleAssignment> userRoles, Role role, ISet<Guid> units) =>

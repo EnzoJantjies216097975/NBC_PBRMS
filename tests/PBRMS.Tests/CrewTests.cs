@@ -224,11 +224,22 @@ public class CrewTests(TestApi api)
     }
 
     [Fact]
-    public async Task A_supervisor_cant_book_studio_crew()
+    public async Task A_supervisor_can_change_their_divisions_studio_crew_and_the_booking_officer_is_told()
     {
         var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
 
         var response = await api.AssignAsync("supervisor@pbrms.test", booking, "Camera", await api.NewOperatorAsync("Camera"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(await api.NotificationsAsync("booking@pbrms.test"), n => n.BookingId == booking.Id && n.Text.Contains("A supervisor changed the crew"));
+    }
+
+    [Fact]
+    public async Task A_supervisor_cant_change_another_divisions_studio_crew()
+    {
+        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
+
+        var response = await api.AssignAsync("supervisor.sound@pbrms.test", booking, "Camera", await api.NewOperatorAsync("Camera"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }

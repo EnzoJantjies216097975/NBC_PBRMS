@@ -28,12 +28,12 @@ public enum ClashKind
     RosteredElsewhere,
 
     /// <summary>
-    /// A warning: the operator is on an outside production, and this studio production
-    /// takes precedence. Going ahead takes them off it, and its supervisors must replace them.
+    /// A warning: the operator is on an outside production that isn't confirmed yet, and this
+    /// studio production comes first. Going ahead takes them off it, and its supervisors must replace them.
     /// </summary>
     TakeFromOutside,
 
-    /// <summary>A warning: a studio production at that time is still short of crew. Studios are filled first.</summary>
+    /// <summary>A studio production at that time is still short of this division's crew. Studios are filled first, so outside crew has to wait.</summary>
     StudioNeedsCrew
 }
 
@@ -48,8 +48,7 @@ public enum ClashKind
 public record Clash(ClashKind Kind, string Who, int? ProductionNo, string Title, DateTimeOffset StartsAt, DateTimeOffset EndsAt, Guid? AssignmentId = null)
 {
     /// <summary>True if this can go ahead once someone acknowledges it; false if it stops the work.</summary>
-    public bool IsWarning => Kind is ClashKind.CallIn or ClashKind.OutsideShift or ClashKind.RosteredElsewhere
-        or ClashKind.TakeFromOutside or ClashKind.StudioNeedsCrew;
+    public bool IsWarning => Kind is ClashKind.CallIn or ClashKind.OutsideShift or ClashKind.RosteredElsewhere or ClashKind.TakeFromOutside;
 }
 
 /// <summary>
@@ -84,11 +83,12 @@ public static class ClashRules
 
     /// <summary>
     /// Can a studio production take an operator off this other production? Yes, if the
-    /// other one is outside the studios and hasn't started. A production already running
-    /// keeps its crew, and studios can't take from each other.
+    /// other one is outside the studios and isn't confirmed. A confirmed outside crew keeps its
+    /// people, because the supervisor has already phoned them, and studios can't take from each other.
     /// </summary>
     public static bool StudioTakesPrecedence(Venue wanted, Venue otherVenue, BookingStatus otherStatus) =>
-        IsStudio(wanted) && !IsStudio(otherVenue) && otherStatus is not (BookingStatus.InProgress or BookingStatus.Completed);
+        IsStudio(wanted) && !IsStudio(otherVenue)
+        && otherStatus is not (BookingStatus.Confirmed or BookingStatus.InProgress or BookingStatus.Completed);
 
     /// <summary>
     /// Does this go in the log of work outside the roster? Off days are more of a suggestion

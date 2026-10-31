@@ -4,16 +4,14 @@ using PBRMS.Domain;
 namespace PBRMS.Data;
 
 /// <summary>
-/// Studio productions take precedence over outside ones: studios are normally filled
-/// first. So a studio can take an operator straight off an outside production. That
-/// production then needs someone else, and its supervisors are told to find them.
+/// Studios are filled first. A studio can take an operator off an outside production that
+/// isn't confirmed yet. That production then needs someone else, and its supervisors are
+/// told to find them. A confirmed crew is left alone: the supervisor has already phoned them.
 /// </summary>
 public class StudioPrecedence(PbrmsDbContext db, Notifier notifier)
 {
     /// <summary>
-    /// Takes the operator off the outside production. If it had got past crew assignment
-    /// it goes back there, even if it was confirmed, and comes through the Booking
-    /// Officer again once the position is filled.
+    /// Takes the operator off the outside production, which is still being crewed.
     /// </summary>
     /// <param name="studio">The studio production taking them.</param>
     public async Task TakeAsync(Guid assignmentId, Booking studio, Guid actorId)
@@ -23,23 +21,8 @@ public class StudioPrecedence(PbrmsDbContext db, Notifier notifier)
             .Include(a => a.CrewSlot).ThenInclude(s => s.Booking)
             .SingleAsync(a => a.Id == assignmentId);
 
-        var now = DateTimeOffset.UtcNow;
         var outside = taken.CrewSlot.Booking;
-        taken.RemovedAt = now;
-
-        if (outside.Status is BookingStatus.Finalisation or BookingStatus.Confirmed)
-        {
-            db.BookingStatusChanges.Add(new BookingStatusChange
-            {
-                BookingId = outside.Id,
-                FromStatus = outside.Status,
-                ToStatus = BookingStatus.CrewAssignment,
-                ActorId = actorId,
-                Note = $"{taken.CrewSlot.PositionLabel} taken for studio production #{studio.ProductionNo}",
-                At = now
-            });
-            outside.Status = BookingStatus.CrewAssignment;
-        }
+        taken.RemovedAt = DateTimeOffset.UtcNow;
 
         var operatorName = $"{taken.Operator.FirstName} {taken.Operator.Surname}";
         var production = $"#{outside.ProductionNo} {outside.Title} ({NbcTime.Text(taken.CrewSlot.StartsAt)})";

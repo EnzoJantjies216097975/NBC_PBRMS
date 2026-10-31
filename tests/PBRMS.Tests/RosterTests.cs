@@ -98,7 +98,7 @@ public class RosterTests(TestApi api)
         await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 6), "TR"));
         await PublishOkAsync(month);
         var studio = await api.AtCrewStageAsync(StartOn(month, 6), Venue.Studio1, "Camera");
-        var trip = await api.AtCrewStageAsync(StartOn(month, 6), Venue.Location, isTrip: true, "Camera");
+        var trip = await api.AtCrewStageAsync(StartOn(month, 6).AddHours(3), Venue.Location, isTrip: true, "Camera");
 
         Assert.Equal(HttpStatusCode.Conflict, (await api.AssignAsync(studio, "Camera", op, acknowledge: true)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(trip, "Camera", op, acknowledge: true)).StatusCode);

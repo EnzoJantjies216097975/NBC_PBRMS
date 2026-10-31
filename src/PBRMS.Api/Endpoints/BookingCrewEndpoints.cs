@@ -7,14 +7,14 @@ using PBRMS.Domain;
 namespace PBRMS.Api.Endpoints;
 
 /// <summary>
-/// PUT /bookings/{id}/crew: the Booking Officer books studio crew, and supervisors decide who
-/// goes outside (see <see cref="BookingWorkflow.MayStaff"/>).
+/// PUT /bookings/{id}/crew: the Booking Officer books studio crew, supervisors decide who
+/// goes outside, and can change their division's studio crew as needed (see <see cref="BookingWorkflow.MayStaff"/>).
 ///
-/// A clash (on leave, on another studio production) stops the assignment. A warning (a
+/// A clash (on leave, on another production, a studio still short) stops the assignment. A warning (a
 /// day off, outside their shift, another studio) goes back to the person assigning, who
 /// can go ahead by sending the request again with acknowledgeWarnings: true. Going ahead
 /// notifies the people affected, and work outside the roster is logged for HR. A studio
-/// production takes precedence over an outside one, so it can take an operator off it.
+/// production can take an operator off an outside one that isn't confirmed yet.
 /// See <see cref="RosterRules"/> and <see cref="StudioPrecedence"/>.
 /// </summary>
 public static class BookingCrewEndpoints
@@ -55,7 +55,7 @@ public static class BookingCrewEndpoints
 
         var blocking = found.Select(f => f.Clash).Where(c => !c.IsWarning).Distinct().ToList();
         if (blocking.Count > 0)
-            return Problems.Clashes("An operator can't work this position at that time.", blocking);
+            return Problems.Clashes("This position can't be filled yet. See the clashes listed.", blocking);
 
         var warnings = found.Where(f => f.Clash.IsWarning).ToList();
         if (warnings.Count > 0 && !request.AcknowledgeWarnings)
@@ -78,6 +78,9 @@ public static class BookingCrewEndpoints
 
             await TellAboutWarningAsync(notifier, booking, slot, operatorId, warning, caller.UserId);
         }
+
+        if (changes.Count > 0 && BookingWorkflow.CrewLead(booking.Venue) == Role.BookingOfficer && !caller.Holds(Role.BookingOfficer))
+            await TellBookingOfficerAsync(notifier, booking);
 
         if (wasConfirmed)
             TellAboutCrewChange(notifier, booking, replaced, newOperators.Select(c => c.OperatorId!.Value));
@@ -111,7 +114,7 @@ public static class BookingCrewEndpoints
             if (slot is null)
                 return (changes, Problems.Invalid("slotId", "That crew position isn't on this booking."));
             if (!BookingWorkflow.MayStaff(booking, slot.DivisionId, caller.Roles, DateTimeOffset.UtcNow))
-                return (changes, Problems.Forbidden("The Booking Officer books studio crew. Outside crew is decided by the division's supervisor, and by the Booking Officer once the daily roster is due."));
+                return (changes, Problems.Forbidden("You can only change crew in your own division. Outside crew is the supervisors', until the daily roster is due."));
             if (slot.Current?.OperatorId == change.OperatorId)
                 continue;
 
@@ -171,7 +174,7 @@ public static class BookingCrewEndpoints
     /// <summary>
     /// After someone went ahead despite a warning. Work outside the roster tells the
     /// operator, the division's supervisors, the TV Operations Manager and the Booking
-    /// Officer. Warnings about studios tell the supervisors, who must sort out the cover.
+    /// Officer. Moving someone from their studio tells the supervisors, who must sort out the cover.
     /// The person who made the change already saw the warning, so they aren't told again.
     /// </summary>
     private static async Task TellAboutWarningAsync(Notifier notifier, Booking booking, CrewSlot slot, Guid operatorId, Clash warning, Guid actorId)
@@ -199,15 +202,14 @@ public static class BookingCrewEndpoints
                 $"{warning.Who} is now on {production} at {booking.Venue}. {warning.Title}. Please make the changes needed to cover it.",
                 booking.Id);
         }
-        else if (warning.Kind == ClashKind.StudioNeedsCrew)
-        {
-            // The Booking Officer decides studio crew, so it's theirs to know a studio is short.
-            notifier.Send(
-                await notifier.PeopleWithRoleAsync(Role.BookingOfficer),
-                $"{production} at {booking.Venue} was crewed while studio production #{warning.ProductionNo} {warning.Title} still needs {warning.Who}.",
-                booking.Id);
-        }
     }
+
+    /// <summary>Studio bookings are the Booking Officer's to run, so they hear when a supervisor changes the crew.</summary>
+    private static async Task TellBookingOfficerAsync(Notifier notifier, Booking booking) =>
+        notifier.Send(
+            await notifier.PeopleWithRoleAsync(Role.BookingOfficer),
+            $"A supervisor changed the crew on #{booking.ProductionNo} {booking.Title} ({NbcTime.Text(booking.StartsAt)}).",
+            booking.Id);
 
     /// <summary>A confirmed crew changed: tell who came off, who went on, and the producer (App Flow Document, "Crew change after confirmation").</summary>
     private static void TellAboutCrewChange(Notifier notifier, Booking booking, IEnumerable<Guid> removed, IEnumerable<Guid> added)
