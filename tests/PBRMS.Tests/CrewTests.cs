@@ -212,7 +212,7 @@ public class CrewTests(TestApi api)
     [Fact]
     public async Task Undecided_outside_crew_goes_to_the_booking_officer_once_the_daily_roster_is_due()
     {
-        // Starting in two hours, so the deadline (16h00 the day before) has passed.
+        // Starting today, so the deadline (16h00 the day before) has passed.
         var booking = await api.AtCrewStageAsync(DateTimeOffset.UtcNow.AddHours(2), Venue.Location, "Camera");
         var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
 

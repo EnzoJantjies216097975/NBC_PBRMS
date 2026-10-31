@@ -137,6 +137,13 @@ namespace PBRMS.Data.Migrations
                     b.Property<bool>("IsTrip")
                         .HasColumnType("bit");
 
+                    b.Property<Guid?>("LateAllowedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LateAllowedReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
@@ -183,6 +190,8 @@ namespace PBRMS.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DepartmentId");
+
+                    b.HasIndex("LateAllowedById");
 
                     b.HasIndex("ProducerId");
 
@@ -745,6 +754,11 @@ namespace PBRMS.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("PBRMS.Domain.User", "LateAllowedBy")
+                        .WithMany()
+                        .HasForeignKey("LateAllowedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PBRMS.Domain.User", "Producer")
                         .WithMany()
                         .HasForeignKey("ProducerId")
@@ -752,6 +766,8 @@ namespace PBRMS.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Department");
+
+                    b.Navigation("LateAllowedBy");
 
                     b.Navigation("Producer");
                 });

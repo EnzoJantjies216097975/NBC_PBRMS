@@ -71,6 +71,13 @@ public static class TestSteps
         var created = await producer.PostAsJsonAsync("/bookings", form, Json);
         var booking = (await created.Content.ReadFromJsonAsync<BookingResponse>(Json))!;
 
+        // Past the 15h00 cut-off, which only the Booking Officer can allow.
+        if (BookingWorkflow.MissedCutOff(start, DateTimeOffset.UtcNow))
+        {
+            var officer = await api.SignedInClientAsync("booking@pbrms.test");
+            (await officer.PostAsJsonAsync($"/bookings/{booking.Id}/allow-late", new OverrideRequest("Test booking"), Json)).EnsureSuccessStatusCode();
+        }
+
         await api.TransitionAsync("producer@pbrms.test", booking.Id, BookingAction.Submit);
         return await api.TransitionAsync("ep@pbrms.test", booking.Id, BookingAction.Approve);
     }

@@ -90,6 +90,8 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
             // Restrict: departments and producers with bookings cannot be deleted.
             booking.HasOne(b => b.Department).WithMany().HasForeignKey(b => b.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             booking.HasOne(b => b.Producer).WithMany().HasForeignKey(b => b.ProducerId).OnDelete(DeleteBehavior.Restrict);
+            booking.HasOne(b => b.LateAllowedBy).WithMany().HasForeignKey(b => b.LateAllowedById).OnDelete(DeleteBehavior.Restrict);
+            booking.Property(b => b.LateAllowedReason).HasMaxLength(500);
 
             // For the approval queues and the day plan (Backend Schema Document, "Key indexes").
             booking.HasIndex(b => new { b.Status, b.DepartmentId });

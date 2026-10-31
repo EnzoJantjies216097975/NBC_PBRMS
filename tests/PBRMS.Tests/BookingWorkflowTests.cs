@@ -106,6 +106,26 @@ public class BookingWorkflowTests
         Assert.True(BookingWorkflow.MayStaff(shoot, Camera.Id, Holds(Role.BookingOfficer, null), AtDeadline));
     }
 
+    [Theory]
+    [InlineData(14, 59, 1)] // before 15h00: tomorrow is still open
+    [InlineData(15, 0, 2)]  // from 15h00: tomorrow is closed
+    [InlineData(23, 30, 2)]
+    public void Bookings_for_the_next_day_close_at_15h00(int hour, int minute, int daysAhead)
+    {
+        var now = new DateTimeOffset(2031, 3, 4, hour, minute, 0, NbcTime.Offset);
+
+        Assert.Equal(new DateOnly(2031, 3, 4).AddDays(daysAhead), BookingWorkflow.EarliestBookableDate(now));
+    }
+
+    [Fact]
+    public void Today_is_always_too_late_to_book()
+    {
+        var morning = new DateTimeOffset(2031, 3, 4, 7, 0, 0, NbcTime.Offset);
+
+        Assert.True(BookingWorkflow.MissedCutOff(morning.AddHours(5), morning));
+        Assert.False(BookingWorkflow.MissedCutOff(morning.AddDays(1), morning));
+    }
+
     [Fact]
     public void Approving_a_draft_is_not_a_move()
     {

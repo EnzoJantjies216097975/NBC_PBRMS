@@ -11,7 +11,8 @@ namespace PBRMS.Api.Endpoints;
 /// </summary>
 public static class AppSessionEndpoints
 {
-    public record AppSessionForm(Guid OperatorId, string Production, DateTimeOffset StartsAt, DateTimeOffset EndsAt, string? Note);
+    /// <param name="AcknowledgeShortNotice">The person knows it's after the cut-off and wants to go ahead.</param>
+    public record AppSessionForm(Guid OperatorId, string Production, DateTimeOffset StartsAt, DateTimeOffset EndsAt, string? Note, bool AcknowledgeShortNotice = false);
 
     public record AppNoteRequest(string? Note);
 
@@ -192,6 +193,12 @@ public static class AppSessionEndpoints
         if (taken.Count > 0)
             return Problems.Clashes("The APP room is booked at that time. See GET /app-room/busy for when it's free.", taken);
 
+        // APP should be booked by the day before, so the operator can plan. It's a warning
+        // and not a refusal, because urgent work does happen.
+        var shortNotice = BookingWorkflow.MissedCutOff(form.StartsAt, DateTimeOffset.UtcNow);
+        if (shortNotice && !form.AcknowledgeShortNotice)
+            return Problems.Warnings("That's short notice for the APP operator. Book by 15h00 the day before if you can.", []);
+
         var session = new AppSession
         {
             Production = form.Production.Trim(),
@@ -204,7 +211,8 @@ public static class AppSessionEndpoints
         };
         db.AppSessions.Add(session);
 
-        notifier.Send([session.OperatorId], $"APP booking for {session.Production} at {NbcTime.Text(session.StartsAt)}. Please confirm it.");
+        var notice = shortNotice ? "Short notice: " : "";
+        notifier.Send([session.OperatorId], $"{notice}APP booking for {session.Production} at {NbcTime.Text(session.StartsAt)}. Please confirm it.");
         await db.SaveChangesAsync();
 
         return Results.Created($"/app-sessions/{session.Id}", await LoadAsync(db, session.Id));

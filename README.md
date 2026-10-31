@@ -98,6 +98,18 @@ Producer → Executive Producer → crew → confirmed → production day. After
 If an outside production is still undecided when the daily roster is due (16h00 the day
 before), the Booking Officer can decide it too, and it appears in their queue.
 
+**The 15h00 cut-off.** Producers can't submit a booking for the next day from 15h00, so supervisors
+and the Booking Officer can finalise it before the daily roster at 16h00. Today is always closed.
+The refusal names the earliest date, and `GET /bookings/earliest-date` gives it to the form. Drafts can
+be saved at any time. If a booking really can't wait, the Booking Officer lets it through with
+`POST /bookings/{id}/allow-late` and a reason. The reason goes in its history, and the TV
+Operations Manager is told. APP is softer: short notice is a warning, because urgent work happens.
+
+**Booking Officer override.** Once outside crew reaches them at the deadline, the Booking Officer can
+fill it while a studio is still short by adding `overrideReason` to `PUT /bookings/{id}/crew`. The
+reason goes in the booking's history, and the supervisors and TV Operations Manager are told.
+Nobody else can override this, and no other clash can be overridden.
+
 Admin can see who decided each position and who confirmed each booking at
 `GET /reports/confirmations?from=&to=`.
 

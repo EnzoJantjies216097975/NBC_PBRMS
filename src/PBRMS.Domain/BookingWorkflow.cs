@@ -122,6 +122,25 @@ public static class BookingWorkflow
         NbcTime.At(NbcTime.DateOf(startsAt).AddDays(-1), DailyRosterTime);
 
     /// <summary>
+    /// Producers can't book the next day after 15h00, so supervisors and the Booking Officer
+    /// can finalise it undisturbed before the daily roster is built at 16h00.
+    /// </summary>
+    public static readonly TimeOnly BookingCutOff = new(15, 0);
+
+    /// <summary>
+    /// The first day a producer can book right now: tomorrow, or from 15h00 the day after.
+    /// </summary>
+    public static DateOnly EarliestBookableDate(DateTimeOffset now)
+    {
+        var time = TimeOnly.FromTimeSpan(now.ToOffset(NbcTime.Offset).TimeOfDay);
+        return NbcTime.DateOf(now).AddDays(time < BookingCutOff ? 1 : 2);
+    }
+
+    /// <summary>Is this too late to book now? The Booking Officer can allow it if needed.</summary>
+    public static bool MissedCutOff(DateTimeOffset startsAt, DateTimeOffset now) =>
+        NbcTime.DateOf(startsAt) < EarliestBookableDate(now);
+
+    /// <summary>
     /// NBC has one APP room, so there is one way to book it: an APP booking (see
     /// <see cref="AppSession"/>). A normal booking in APP couldn't see those, and the room
     /// would be double-booked. So <see cref="Venue.App"/> is refused on the booking form.

@@ -114,6 +114,16 @@ public static class BookingTransitionEndpoints
         if (step.Action == BookingAction.Submit && booking.CrewSlots.Count == 0)
             return (booking.Status, Problems.Invalid("crewSlots", "Add at least one crew position before submitting."));
 
+        // After 15h00 the next day is closed to producers, unless the Booking Officer allowed this one.
+        if (step.Action == BookingAction.Submit
+            && booking.LateAllowedById is null
+            && BookingWorkflow.MissedCutOff(booking.StartsAt, DateTimeOffset.UtcNow))
+        {
+            var earliest = BookingWorkflow.EarliestBookableDate(DateTimeOffset.UtcNow);
+            return (booking.Status, Problems.Conflict(
+                $"Too late to book that day: bookings close at 15h00 the day before. The earliest you can book now is {earliest:dd/MM/yyyy}. If it can't wait, ask the Booking Officer."));
+        }
+
         if (step.To == BookingStatus.Confirmed && await CheckConfirmAsync(booking, request, caller, services) is { } problem)
             return (booking.Status, problem);
 

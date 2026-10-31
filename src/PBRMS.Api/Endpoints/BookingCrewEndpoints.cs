@@ -53,7 +53,17 @@ public static class BookingCrewEndpoints
         await ClashLocks.TakeAsync(db, newOperators.Select(c => ClashLocks.ForOperator(c.OperatorId!.Value)));
         var found = await FindClashesAsync(newOperators, booking, clashChecker);
 
-        var blocking = found.Select(f => f.Clash).Where(c => !c.IsWarning).Distinct().ToList();
+        // The Booking Officer can override "studios first" with a reason, only if needed. They
+        // only reach outside crew at the deadline, so this can't be used any earlier.
+        var overrideReason = caller.Holds(Role.BookingOfficer) ? request.OverrideReason?.Trim() : null;
+        var overriding = !string.IsNullOrEmpty(overrideReason);
+        if (overrideReason?.Length > 500)
+            return Problems.Invalid("overrideReason", "Keep the reason to 500 characters.");
+
+        var blocking = found.Select(f => f.Clash)
+            .Where(c => !c.IsWarning && !(overriding && c.Kind == ClashKind.StudioNeedsCrew))
+            .Distinct()
+            .ToList();
         if (blocking.Count > 0)
             return Problems.Clashes("This position can't be filled yet. See the clashes listed.", blocking);
 
@@ -65,6 +75,9 @@ public static class BookingCrewEndpoints
         var wasConfirmed = booking.Status == BookingStatus.Confirmed;
         var replaced = ApplyChanges(changes, caller.UserId);
         await crewProgress.MoveOnIfFullAsync(booking, caller.UserId);
+
+        if (overriding && found.Any(f => f.Clash.Kind == ClashKind.StudioNeedsCrew))
+            await RecordOverrideAsync(notifier, booking, changes, overrideReason!, caller.UserId);
 
         // 4. Act on the warnings that were acknowledged: take operators off outside
         //    productions, log work outside the roster, and tell the people affected.
@@ -202,6 +215,26 @@ public static class BookingCrewEndpoints
                 $"{warning.Who} is now on {production} at {booking.Venue}. {warning.Title}. Please make the changes needed to cover it.",
                 booking.Id);
         }
+    }
+
+    /// <summary>The Booking Officer put outside crew ahead of a short studio: keep the reason, and tell the people it affects.</summary>
+    private static async Task RecordOverrideAsync(Notifier notifier, Booking booking, List<(CrewSlot Slot, Guid? OperatorId)> changes, string reason, Guid actorId)
+    {
+        booking.History.Add(new BookingStatusChange
+        {
+            FromStatus = booking.Status,
+            ToStatus = booking.Status,
+            ActorId = actorId,
+            Note = $"Studios-first overridden: {reason}",
+            At = DateTimeOffset.UtcNow
+        });
+
+        var supervisors = await notifier.PeopleWithRoleAsync(Role.Supervisor, changes.Select(c => c.Slot.DivisionId));
+        var manager = await notifier.PeopleWithRoleAsync(Role.TvOperationsManager);
+        notifier.Send(
+            supervisors.Concat(manager),
+            $"The Booking Officer crewed #{booking.ProductionNo} {booking.Title} while a studio was still short: {reason}",
+            booking.Id);
     }
 
     /// <summary>Studio bookings are the Booking Officer's to run, so they hear when a supervisor changes the crew.</summary>

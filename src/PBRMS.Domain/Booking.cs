@@ -66,6 +66,14 @@ public class Booking
     public DateTimeOffset? ActualStartAt { get; set; }
     public DateTimeOffset? ActualEndAt { get; set; }
 
+    /// <summary>
+    /// The Booking Officer who let this booking through after the 15h00 cut-off, and why.
+    /// Empty for an ordinary booking.
+    /// </summary>
+    public Guid? LateAllowedById { get; set; }
+    public User? LateAllowedBy { get; set; }
+    public string? LateAllowedReason { get; set; }
+
     /// <summary>When the Booking Officer was told its crew was still undecided at the deadline, so they are told only once.</summary>
     public DateTimeOffset? BookingOfficerToldAt { get; set; }
 

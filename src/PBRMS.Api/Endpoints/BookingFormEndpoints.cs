@@ -19,6 +19,49 @@ public static class BookingFormEndpoints
             .RequireAuthorization(p => p.RequireRole(nameof(Role.Producer), nameof(Role.ExecutiveProducer), nameof(Role.BookingOfficer)));
 
         app.MapPut("/bookings/{id:guid}", EditDraft).RequireAuthorization();
+
+        app.MapGet("/bookings/earliest-date", () => new { date = BookingWorkflow.EarliestBookableDate(DateTimeOffset.UtcNow) })
+            .RequireAuthorization();
+
+        app.MapPost("/bookings/{id:guid}/allow-late", AllowLate)
+            .RequireAuthorization(p => p.RequireRole(nameof(Role.BookingOfficer)));
+    }
+
+    /// <summary>
+    /// The Booking Officer lets a draft through after the 15h00 cut-off, only if needed. It
+    /// needs a reason, which goes in the booking's history, and the TV Operations Manager is told.
+    /// </summary>
+    private static async Task<IResult> AllowLate(Guid id, OverrideRequest request, ClaimsPrincipal principal, PbrmsDbContext db, Notifier notifier)
+    {
+        var reason = request.Reason?.Trim();
+        if (string.IsNullOrEmpty(reason) || reason.Length > 500)
+            return Problems.Invalid("reason", "Say why this booking can't wait, in up to 500 characters.");
+
+        var booking = await db.Bookings.FirstOrDefaultAsync(b => b.Id == id);
+        if (booking is null)
+            return Results.NotFound();
+        if (booking.Status != BookingStatus.Draft)
+            return Problems.Conflict("Only a draft can be allowed through.");
+
+        var bookingOfficerId = PbrmsClaims.UserIdOf(principal);
+        booking.LateAllowedById = bookingOfficerId;
+        booking.LateAllowedReason = reason;
+        booking.History.Add(new BookingStatusChange
+        {
+            FromStatus = booking.Status,
+            ToStatus = booking.Status,
+            ActorId = bookingOfficerId,
+            Note = $"Allowed after the 15h00 cut-off: {reason}",
+            At = DateTimeOffset.UtcNow
+        });
+
+        notifier.Send(
+            (await notifier.PeopleWithRoleAsync(Role.TvOperationsManager)).Append(booking.ProducerId),
+            $"The Booking Officer allowed #{booking.ProductionNo} {booking.Title} after the cut-off: {reason}",
+            booking.Id);
+
+        await db.SaveChangesAsync();
+        return Results.Ok(await BookingQueries.LoadResponseAsync(db, id));
     }
 
     private static async Task<IResult> CreateDraft(BookingForm form, ClaimsPrincipal principal, PbrmsDbContext db)

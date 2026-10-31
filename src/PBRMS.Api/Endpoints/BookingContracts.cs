@@ -41,7 +41,14 @@ public record TransitionRequest(BookingAction Action, string? Note, Channel? Cha
 /// The person has seen the warnings (a day off, another studio) and wants to go ahead.
 /// Without it, a warning comes back as a 409 listing them, and nothing is saved.
 /// </param>
-public record CrewRequest(List<CrewChange> Assignments, bool AcknowledgeWarnings = false);
+/// <param name="OverrideReason">
+/// The Booking Officer's reason for filling outside crew while a studio is still short, only if
+/// needed. It's recorded in the booking's history. Other clashes can't be overridden.
+/// </param>
+public record CrewRequest(List<CrewChange> Assignments, bool AcknowledgeWarnings = false, string? OverrideReason = null);
+
+/// <summary>Why the Booking Officer is making an exception.</summary>
+public record OverrideRequest(string? Reason);
 
 /// <summary>Put this operator on this slot. An empty OperatorId takes the current operator off it.</summary>
 public record CrewChange(Guid SlotId, Guid? OperatorId);
