@@ -13,9 +13,10 @@ describe the current Production Board, which PBRMS replaces.
 | `src/PBRMS.Domain` | The things PBRMS is about (users, org units, roles) and, later, the business rules. No database code. |
 | `src/PBRMS.Data` | The SQL Server database: `PbrmsDbContext`, migrations, sample data for development. |
 | `src/PBRMS.Api` | The web API: sign-in (`Auth/`) and endpoints (`Endpoints/`). `Program.cs` wires it together. |
+| `src/PBRMS.Web` | The web app (Blazor Server). Screens only: everything goes through the API. |
 | `tests/PBRMS.Tests` | Tests that run the real API in memory. |
 
-The web (Blazor) and mobile projects come later.
+The mobile app comes later.
 
 ## Set up a development machine
 
@@ -83,6 +84,23 @@ Send every request except health and dev-login with `Authorization: Bearer <toke
 If you change `DevSeed.cs`, drop the development database to pick up the change:
 `dotnet ef database drop --project src/PBRMS.Data --startup-project src/PBRMS.Api`.
 
+
+## Run the web app
+
+The web app is a Blazor Server project with no rules or data of its own: everything goes through
+the API. Start both, in two terminals:
+
+```
+dotnet run --project src/PBRMS.Api
+dotnet run --project src/PBRMS.Web
+```
+
+Then open <http://localhost:5103> and pick who to be. Each browser tab signs in separately, so you
+can open two tabs as different people and watch changes arrive live.
+
+So far it has: My work, the booking form, booking pages (approve, crew, confirm), the daily roster
+with its PDF, the APP room, and notifications. On NBC's servers the sign-in page becomes the
+Microsoft sign-in, and `Api:BaseUrl` must point at the API.
 
 ## How a booking moves
 

@@ -1,0 +1,238 @@
+@* The APP room: is it busy right now, when is it taken, and booking it. Keeping this right
+   is never the operator's job: the person using the room checks in and finishes. *@
+@page "/app-room"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveUpdates Live
+
+<PageTitle>APP room</PageTitle>
+
+<h1>APP room</h1>
+
+@if (status is not null)
+{
+    @if (status.Busy)
+    {
+        <p class="banner busy">
+            <strong>Busy</strong> with @status.Production until @Formats.Until(status.Until!.Value)
+            <span class="muted">(@status.BookedBy, @status.Operator)</span>
+        </p>
+    }
+    else
+    {
+        <p class="banner free">
+            <strong>Free right now.</strong>
+            @if (status.NextStartsAt is { } next)
+            {
+                <span class="muted"> Next session: @Formats.When(next)</span>
+            }
+        </p>
+    }
+}
+
+@if (error is not null)
+{
+    <div class="problem">
+        <p>@error</p>
+        @if (shortNotice)
+        {
+            <button @onclick="() => BookAsync(true)">Book anyway</button>
+        }
+    </div>
+}
+
+@if (status is not null && Api.Has(Role.Producer, Role.Editor) && operators.Count == 0)
+{
+    <p class="muted">There are no APP operators to book yet.</p>
+}
+else if (Api.Has(Role.Producer, Role.Editor))
+{
+    <h2>Book APP</h2>
+    <div class="form">
+        <label>
+            Operator
+            <select @bind="operatorId">
+                @foreach (var person in operators)
+                {
+                    <option value="@person.Id">@person.Name</option>
+                }
+            </select>
+        </label>
+        <label>Production <input @bind="production" maxlength="160" /></label>
+        <label>Starts <input type="datetime-local" @bind="start" /></label>
+        <label>Ends <input type="datetime-local" @bind="end" /></label>
+    </div>
+    <div class="actions">
+        <button @onclick="() => BookAsync(false)">Book</button>
+    </div>
+
+    <h2>Using the room right now?</h2>
+    <p class="muted">Check in so other producers can see it's busy. There's nothing for the operator to do.</p>
+    <div class="actions">
+        <select @bind="walkInMinutes">
+            <option value="30">For 30 minutes</option>
+            <option value="60">For 1 hour</option>
+            <option value="90">For 1½ hours</option>
+            <option value="120">For 2 hours</option>
+            <option value="180">For 3 hours</option>
+        </select>
+        <button class="quiet" @onclick="CheckInAsync">Check in now</button>
+    </div>
+}
+
+<h2>Taken this week</h2>
+@if (busy.Count == 0)
+{
+    <p class="muted">Nothing booked.</p>
+}
+else
+{
+    <ul class="rows plain">
+        @foreach (var slot in busy)
+        {
+            <li>@Formats.When(slot.StartsAt) to @Formats.Clock(slot.EndsAt) <span class="muted">@slot.Operator</span></li>
+        }
+    </ul>
+}
+
+@if (Api.Has(Role.BookingOfficer) && waiting.Count > 0)
+{
+    <h2>Waiting for a suitable time</h2>
+    @foreach (var session in waiting)
+    {
+        <div class="actions">
+            <span>@session.Production, asked for @Formats.When(session.StartsAt)</span>
+            <input type="datetime-local" @bind="suggested" />
+            <button @onclick="() => SuggestAsync(session)">Suggest this time</button>
+        </div>
+    }
+}
+
+<h2>My APP bookings</h2>
+@if (mine.Count == 0)
+{
+    <p class="muted">None.</p>
+}
+
+@foreach (var session in mine)
+{
+    <div class="actions">
+        <span>
+            @session.Production, @Formats.When(session.StartsAt)
+            <span class="badge">@session.Status</span>
+            @if (session.SuggestedStartsAt is { } time && session.Status == AppSessionStatus.TimeSuggested)
+            {
+                <span class="muted"> Suggested: @Formats.When(time)</span>
+            }
+        </span>
+
+        @if (session.Status == AppSessionStatus.Requested && Api.Has(Role.AppOperator))
+        {
+            <button @onclick='() => ActAsync(session, "confirm")'>Confirm</button>
+            <button class="quiet" @onclick='() => ActAsync(session, "unavailable")'>Not available</button>
+        }
+        @if (session.Status == AppSessionStatus.TimeSuggested && Api.Has(Role.Producer, Role.Editor))
+        {
+            <button @onclick='() => ActAsync(session, "accept")'>Accept</button>
+        }
+        @if (session.Status == AppSessionStatus.Confirmed && Api.Has(Role.Producer, Role.Editor)
+             && session.StartsAt <= DateTimeOffset.Now && session.EndsAt > DateTimeOffset.Now)
+        {
+            <button @onclick='() => ActAsync(session, "finish")'>Finished</button>
+        }
+        @if (session.Status != AppSessionStatus.Cancelled)
+        {
+            <button class="danger" @onclick='() => ActAsync(session, "cancel")'>Cancel</button>
+        }
+    </div>
+}
+
+@code {
+    private AppRoomStatus? status;
+    private List<AppOperatorRow> operators = [];
+    private List<AppBusyRow> busy = [];
+    private List<AppSessionRow> mine = [];
+    private List<AppSessionRow> waiting = [];
+    private Guid operatorId;
+    private string production = "";
+    private int walkInMinutes = 60;
+    private DateTime start = DateTime.Today.AddDays(1).AddHours(9);
+    private DateTime end = DateTime.Today.AddDays(1).AddHours(10);
+    private DateTime suggested = DateTime.Today.AddDays(1).AddHours(14);
+    private string? error;
+    private bool shortNotice;
+    private Timer? clock;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Live.Changed += ReloadAsync;
+        // The operators come first: the form only shows once there is someone to choose.
+        operators = (await Api.AppOperatorsAsync()).Value ?? [];
+        operatorId = operators.FirstOrDefault()?.Id ?? Guid.Empty;
+        await LoadAsync();
+
+        // A booked session starting at its time sends no message, so check the room every minute.
+        clock = new Timer(_ => _ = ReloadAsync(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+    }
+
+    private async Task LoadAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        status = (await Api.AppStatusAsync()).Value;
+        busy = (await Api.AppBusyAsync(today, today.AddDays(7))).Value ?? [];
+        mine = (await Api.MySessionsAsync()).Value ?? [];
+        waiting = Api.Has(Role.BookingOfficer) ? (await Api.SessionsNeedingATimeAsync()).Value ?? [] : [];
+    }
+
+    private async Task BookAsync(bool acknowledgeShortNotice)
+    {
+        var result = await Api.BookAppAsync(new
+        {
+            operatorId,
+            production,
+            startsAt = Formats.Windhoek(start),
+            endsAt = Formats.Windhoek(end),
+            acknowledgeShortNotice
+        });
+
+        error = result.Error;
+        shortNotice = result.NeedsAcknowledgement;
+        await LoadAsync();
+    }
+
+    private async Task CheckInAsync()
+    {
+        var result = await Api.WalkInAsync(new { operatorId, production, endsAt = DateTimeOffset.UtcNow.AddMinutes(walkInMinutes) });
+        error = result.Error;
+        shortNotice = false;
+        await LoadAsync();
+    }
+
+    private async Task ActAsync(AppSessionRow session, string action)
+    {
+        var result = await Api.SessionActionAsync(session.Id, action);
+        error = result.Error;
+        shortNotice = false;
+        await LoadAsync();
+    }
+
+    private async Task SuggestAsync(AppSessionRow session)
+    {
+        var from = Formats.Windhoek(suggested);
+        var result = await Api.SuggestTimeAsync(session.Id, from, from + (session.EndsAt - session.StartsAt));
+        error = result.Error;
+        await LoadAsync();
+    }
+
+    private Task ReloadAsync() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Live.Changed -= ReloadAsync;
+        clock?.Dispose();
+    }
+}

@@ -1,8 +1,4 @@
-using Microsoft.EntityFrameworkCore;
-using PBRMS.Data;
-using PBRMS.Domain;
-
-namespace PBRMS.Api.Endpoints;
+namespace PBRMS.Domain;
 
 // The shapes of booking data the apps send and receive. They are kept separate from
 // the database classes so the database can change without breaking the apps.
@@ -84,7 +80,7 @@ public record BookingResponse(
     List<StatusChangeResponse> History,
     Role? CrewLead)
 {
-    /// <summary>Builds the response from a booking loaded with <see cref="BookingQueries.WithDetails"/>.</summary>
+    /// <summary>Builds the response from a booking loaded with its crew, producer and history.</summary>
     public static BookingResponse From(Booking b) => new(
         b.Id, b.ProductionNo, b.Title, b.Status,
         b.DepartmentId, b.Department.Name,
@@ -123,30 +119,3 @@ public record CrewSlotResponse(
 
 public record StatusChangeResponse(BookingStatus From, BookingStatus To, string By, string? Note, DateTimeOffset At);
 
-/// <summary>Loading bookings with everything a <see cref="BookingResponse"/> shows.</summary>
-public static class BookingQueries
-{
-    public static IQueryable<Booking> WithDetails(this IQueryable<Booking> bookings) => bookings
-        .AsNoTracking()
-        .Include(b => b.Department)
-        .Include(b => b.Producer)
-        .Include(b => b.CrewSlots).ThenInclude(s => s.Division)
-        .Include(b => b.CrewSlots).ThenInclude(s => s.Assignments.Where(a => a.RemovedAt == null)).ThenInclude(a => a.Operator)
-        .Include(b => b.History).ThenInclude(h => h.Actor)
-        .AsSplitQuery(); // one query per list instead of one huge joined result
-
-    public static async Task<BookingResponse> LoadResponseAsync(PbrmsDbContext db, Guid bookingId) =>
-        BookingResponse.From(await db.Bookings.WithDetails().SingleAsync(b => b.Id == bookingId));
-}
-
-/// <summary>
-/// The services the crew and transition endpoints use, gathered into one parameter so
-/// their signatures stay short. ASP.NET fills it in from the [AsParameters] attribute.
-/// </summary>
-public record BookingServices(
-    PbrmsDbContext Db,
-    ClashChecker ClashChecker,
-    Notifier Notifier,
-    OffRosterLog OffRosterLog,
-    StudioPrecedence StudioPrecedence,
-    CrewProgress CrewProgress);

@@ -1,0 +1,50 @@
+@* My work: what's waiting for this person, and a producer's own bookings. It refreshes by itself. *@
+@page "/"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveUpdates Live
+
+<PageTitle>My work</PageTitle>
+
+<h1>My work</h1>
+
+@if (queue is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <BookingList Bookings="queue" Empty="Nothing is waiting for you." />
+
+    @if (mine is not null)
+    {
+        <h2>My bookings</h2>
+        <BookingList Bookings="mine" Empty="You have no bookings yet." />
+    }
+}
+
+@code {
+    private List<BookingResponse>? queue;
+    private List<BookingResponse>? mine;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Live.Changed += ReloadAsync;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        // Operators don't have a queue: the API refuses them, and they just see an empty list.
+        queue = (await Api.QueueAsync()).Value ?? [];
+        mine = Api.Has(Role.Producer) ? (await Api.MyBookingsAsync()).Value : null;
+    }
+
+    private Task ReloadAsync() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Live.Changed -= ReloadAsync;
+}

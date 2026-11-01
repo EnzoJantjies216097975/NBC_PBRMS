@@ -1,0 +1,123 @@
+/* PBRMS web app. Colours and rules come from the Design System: NBC blue is identity,
+   never status, and a status is never shown by colour alone. */
+:root {
+    --brand: #073F89;
+    --ink: #1A1A17;
+    --paper: #FAF9F5;
+    --line: #D9D6CC;
+    --muted: #66635A;
+    --alert: #C8442E;
+    --confirmed: #2F6B45;
+    --highlight: #F2D024;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.45 Lato, "Segoe UI", Arial, sans-serif;
+}
+
+h1 { font-size: 24px; margin: 0 0 12px; }
+h2 { font-size: 16px; margin: 24px 0 8px; }
+a { color: var(--brand); }
+
+.top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 16px;
+    background: var(--brand);
+    color: #fff;
+}
+
+.top a { color: #fff; text-decoration: none; }
+.top .brand { font-weight: 900; font-size: 17px; }
+.top nav { display: flex; flex-wrap: wrap; gap: 14px; flex: 1; }
+.top nav a { padding-bottom: 2px; border-bottom: 2px solid transparent; }
+.top nav a.active { border-bottom-color: #fff; }
+.top .quiet { background: transparent; color: #fff; border-color: #fff; }
+
+.page { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
+.muted { color: var(--muted); font-size: 13px; }
+.error { color: var(--alert); font-weight: 700; }
+
+button, .button {
+    min-height: 34px;
+    padding: 6px 14px;
+    border: 1px solid var(--brand);
+    border-radius: 4px;
+    background: var(--brand);
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+}
+
+button.quiet { background: transparent; color: var(--brand); }
+button.danger { background: transparent; color: var(--alert); border-color: var(--alert); }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+input, select {
+    min-height: 34px;
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: #fff;
+    font: inherit;
+}
+
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; }
+.form label { display: grid; gap: 3px; font-size: 13px; font-weight: 700; }
+.form label.tick { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+.form input:not([type=checkbox]), .form select { width: 100%; }
+
+.slot, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.actions .wide { flex: 1; min-width: 240px; }
+a.button { display: inline-flex; align-items: center; text-decoration: none; }
+a.button.quiet { background: transparent; color: var(--brand); }
+
+.rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.rows li { border-bottom: 1px solid var(--line); }
+.rows.plain li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 4px; }
+.rows li.unread { font-weight: 700; cursor: pointer; }
+.rows a { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 4px; color: inherit; text-decoration: none; }
+.rows a:hover { background: #fff; }
+.rows .title { font-weight: 700; flex: 1 1 240px; }
+
+.badge { display: inline-block; padding: 1px 8px; border: 1px solid var(--line); border-radius: 3px; background: #fff; font-size: 12px; font-weight: 700; }
+.badge.good { border-color: var(--confirmed); color: var(--confirmed); }
+.badge.bad { border-color: var(--alert); color: var(--alert); }
+.badge.wait { background: var(--highlight); border-color: var(--highlight); }
+
+table { width: 100%; border-collapse: collapse; background: #fff; }
+th, td { padding: 6px 8px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { background: #EFEDE5; font-size: 13px; }
+
+.problem { margin: 12px 0; padding: 10px 12px; border-left: 4px solid var(--alert); background: #fff; }
+.problem p { margin: 0 0 6px; }
+.banner { padding: 12px 14px; background: #fff; border-left: 4px solid var(--line); }
+.banner.busy { border-left-color: var(--alert); }
+.banner.free { border-left-color: var(--confirmed); }
+.history { margin: 0; padding-left: 18px; }
+
+.sign-in { max-width: 420px; margin: 8vh auto; padding: 0 16px; }
+.sign-in .person { display: block; width: 100%; margin: 6px 0; text-align: left; background: #fff; color: var(--ink); border-color: var(--line); }
+
+@media (max-width: 640px) {
+    table { display: block; overflow-x: auto; }
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 10px 16px;
+    background: var(--highlight);
+}
+
+#blazor-error-ui .dismiss { float: right; cursor: pointer; }

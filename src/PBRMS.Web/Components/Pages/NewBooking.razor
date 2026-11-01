@@ -1,0 +1,156 @@
+@* The booking form, for a new booking or to fix a draft. A new one starts on the earliest day
+   a producer can book, because of the 15h00 cut-off. *@
+@page "/bookings/new"
+@page "/bookings/{Id:guid}/edit"
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id is null ? "New booking" : "Edit booking")</PageTitle>
+
+<h1>@(Id is null ? "New booking" : "Edit booking")</h1>
+
+@if (units is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <div class="form">
+        <label>Title <input @bind="title" maxlength="160" /></label>
+
+        <label>
+            Department
+            <select @bind="departmentId">
+                @foreach (var unit in units.Where(u => u.Kind != OrgUnitKind.TvOpsDivision))
+                {
+                    <option value="@unit.Id">@unit.Name</option>
+                }
+            </select>
+        </label>
+
+        <label>
+            What for
+            <select @bind="activity">
+                @foreach (var value in Enum.GetValues<ActivityType>())
+                {
+                    <option value="@value">@value</option>
+                }
+            </select>
+        </label>
+
+        <label>
+            Where
+            <select @bind="venue">
+                @* APP has its own bookings, so it isn't offered here. *@
+                @foreach (var value in Enum.GetValues<Venue>().Where(v => v != Venue.App))
+                {
+                    <option value="@value">@value</option>
+                }
+            </select>
+        </label>
+
+        <label>Details of where <input @bind="venueText" maxlength="160" /></label>
+        <label>Crew call <input type="datetime-local" @bind="call" /></label>
+        <label>Starts <input type="datetime-local" @bind="start" /></label>
+        <label>Ends <input type="datetime-local" @bind="end" /></label>
+        <label class="tick"><input type="checkbox" @bind="isTrip" /> Out of town (a trip)</label>
+        <label class="tick"><input type="checkbox" @bind="isOb" /> Outside broadcast</label>
+    </div>
+
+    <h2>Crew needed</h2>
+    <p class="muted">Bookings for tomorrow close at 15h00. The earliest you can book now is @earliest.ToString("dd/MM/yyyy").</p>
+
+    @foreach (var slot in slots)
+    {
+        <div class="slot">
+            <select @bind="slot.DivisionId">
+                @foreach (var division in units.Where(u => u.Kind == OrgUnitKind.TvOpsDivision))
+                {
+                    <option value="@division.Id">@division.Name</option>
+                }
+            </select>
+            <input @bind="slot.Label" placeholder="Position, e.g. Camera 1" maxlength="60" />
+            <button class="quiet" @onclick="() => slots.Remove(slot)">Remove</button>
+        </div>
+    }
+
+    <p><button class="quiet" @onclick="AddSlot">Add a position</button></p>
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+
+    <button @onclick="SaveAsync">@(Id is null ? "Save draft" : "Save changes")</button>
+}
+
+@code {
+    /// <summary>The draft being fixed. Empty for a new booking.</summary>
+    [Parameter] public Guid? Id { get; set; }
+
+    private sealed class SlotRow
+    {
+        public Guid DivisionId { get; set; }
+        public string Label { get; set; } = "";
+    }
+
+    private List<OrgUnitRow>? units;
+    private readonly List<SlotRow> slots = [];
+    private DateOnly earliest;
+    private string title = "";
+    private Guid departmentId;
+    private ActivityType activity;
+    private Venue venue;
+    private string? venueText;
+    private DateTime call, start, end;
+    private bool isTrip, isOb;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        units = (await Api.OrgUnitsAsync()).Value ?? [];
+        departmentId = units.FirstOrDefault(u => u.Kind != OrgUnitKind.TvOpsDivision)?.Id ?? Guid.Empty;
+
+        earliest = (await Api.EarliestDateAsync()).Value?.Date ?? DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+        call = earliest.ToDateTime(new TimeOnly(8, 30));
+        start = earliest.ToDateTime(new TimeOnly(9, 0));
+        end = earliest.ToDateTime(new TimeOnly(11, 0));
+
+        if (Id is { } id && (await Api.BookingAsync(id)).Value is { } draft)
+            Fill(draft);
+    }
+
+    /// <summary>Puts a draft's details into the form.</summary>
+    private void Fill(BookingResponse draft)
+    {
+        title = draft.Title;
+        departmentId = draft.DepartmentId;
+        activity = draft.ActivityType;
+        venue = draft.Venue;
+        venueText = draft.VenueText;
+        call = draft.CallAt.ToOffset(NbcTime.Offset).DateTime;
+        start = draft.StartsAt.ToOffset(NbcTime.Offset).DateTime;
+        end = draft.EndsAt.ToOffset(NbcTime.Offset).DateTime;
+        isTrip = draft.IsTrip;
+        isOb = draft.IsOb;
+        slots.AddRange(draft.CrewSlots.Select(s => new SlotRow { DivisionId = s.DivisionId, Label = s.PositionLabel }));
+    }
+
+    private void AddSlot() =>
+        slots.Add(new SlotRow { DivisionId = units!.FirstOrDefault(u => u.Kind == OrgUnitKind.TvOpsDivision)?.Id ?? Guid.Empty });
+
+    private async Task SaveAsync()
+    {
+        var form = new BookingForm(
+            title, departmentId, null, activity, venue, venueText,
+            Formats.Windhoek(call), Formats.Windhoek(start), Formats.Windhoek(end),
+            isTrip, isOb, null, null,
+            slots.Select(s => new CrewSlotForm(s.DivisionId, s.Label, null, null, null)).ToList());
+
+        var result = Id is { } id ? await Api.UpdateBookingAsync(id, form) : await Api.CreateBookingAsync(form);
+        error = result.Error;
+
+        if (result.Ok)
+            Navigation.NavigateTo($"bookings/{result.Value!.Id}");
+    }
+}

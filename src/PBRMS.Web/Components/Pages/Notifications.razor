@@ -1,0 +1,54 @@
+@* The signed-in person's notifications, newest first. Opening one marks it as read. *@
+@page "/notifications"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveUpdates Live
+@inject NavigationManager Navigation
+
+<PageTitle>Notifications</PageTitle>
+
+<h1>Notifications</h1>
+
+@if (notifications.Count == 0)
+{
+    <p class="muted">Nothing yet.</p>
+}
+
+<ul class="rows plain">
+    @foreach (var notification in notifications)
+    {
+        <li class="@(notification.ReadAt is null ? "unread" : "")" @onclick="() => OpenAsync(notification)">
+            <span>@notification.Text</span>
+            <span class="muted">@Formats.When(notification.CreatedAt)</span>
+        </li>
+    }
+</ul>
+
+@code {
+    private List<NotificationRow> notifications = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Live.Changed += ReloadAsync;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => notifications = (await Api.NotificationsAsync()).Value ?? [];
+
+    private async Task OpenAsync(NotificationRow notification)
+    {
+        await Api.MarkReadAsync(notification.Id);
+        await LoadAsync();
+
+        if (notification.BookingId is { } bookingId)
+            Navigation.NavigateTo($"bookings/{bookingId}");
+    }
+
+    private Task ReloadAsync() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Live.Changed -= ReloadAsync;
+}

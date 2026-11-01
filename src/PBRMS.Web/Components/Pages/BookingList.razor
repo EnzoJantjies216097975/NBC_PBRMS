@@ -1,0 +1,31 @@
+@* A list of bookings, one row each, linking to the booking. *@
+
+@if (Bookings.Count == 0)
+{
+    <p class="muted">@Empty</p>
+}
+else
+{
+    <ul class="rows">
+        @foreach (var booking in Bookings)
+        {
+            var open = booking.CrewSlots.Count(s => s.OperatorId is null);
+            <li>
+                <a href="bookings/@booking.Id">
+                    <span class="title">#@booking.ProductionNo @booking.Title</span>
+                    <span class="muted">@Formats.When(booking.StartsAt), @Formats.Venue(booking.Venue)</span>
+                    @if (open > 0 && booking.Status == BookingStatus.CrewAssignment)
+                    {
+                        <span class="muted">@open to fill</span>
+                    }
+                    <span class="@Formats.StatusClass(booking.Status)">@Formats.Status(booking.Status)</span>
+                </a>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter, EditorRequired] public List<BookingResponse> Bookings { get; set; } = [];
+    [Parameter] public string Empty { get; set; } = "Nothing here.";
+}

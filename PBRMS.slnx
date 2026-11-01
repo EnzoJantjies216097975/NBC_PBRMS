@@ -3,6 +3,7 @@
     <Project Path="src/PBRMS.Api/PBRMS.Api.csproj" />
     <Project Path="src/PBRMS.Data/PBRMS.Data.csproj" />
     <Project Path="src/PBRMS.Domain/PBRMS.Domain.csproj" />
+    <Project Path="src/PBRMS.Web/PBRMS.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PBRMS.Tests/PBRMS.Tests.csproj" />

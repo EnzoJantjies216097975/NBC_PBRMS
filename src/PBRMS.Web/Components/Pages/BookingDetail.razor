@@ -1,0 +1,236 @@
+@* One booking: its details, crew and history, and the next step for whoever is looking at it.
+   The buttons here are a convenience. The API decides what each person may really do. *@
+@page "/bookings/{Id:guid}"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveUpdates Live
+
+<PageTitle>Booking</PageTitle>
+
+@if (booking is null)
+{
+    <p>@(error ?? "Loading…")</p>
+}
+else
+{
+    <h1>#@booking.ProductionNo @booking.Title</h1>
+    <p>
+        <span class="@Formats.StatusClass(booking.Status)">@Formats.Status(booking.Status)</span>
+        <span class="muted">@booking.Department, @booking.Producer</span>
+    </p>
+    <p>@Formats.When(booking.StartsAt) to @Formats.Clock(booking.EndsAt), @Formats.Venue(booking.Venue) @booking.VenueText</p>
+
+    <h2>Crew</h2>
+    <table>
+        <thead><tr><th>Position</th><th>Division</th><th>Operator</th></tr></thead>
+        <tbody>
+            @foreach (var slot in booking.CrewSlots)
+            {
+                <tr>
+                    <td>@slot.PositionLabel</td>
+                    <td>@slot.Division</td>
+                    <td>
+                        @if (canChooseCrew && pickers.TryGetValue(slot.DivisionId, out var operators))
+                        {
+                            <select @onchange="e => Choose(slot.Id, e.Value?.ToString())">
+                                <option value="">Choose…</option>
+                                @foreach (var person in operators)
+                                {
+                                    <option value="@person.Id" selected="@(slot.OperatorId == person.Id)">@person.Name</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            @(slot.Operator ?? "Not filled")
+                        }
+                        @if (slot.OperatorPhone is not null)
+                        {
+                            <span class="muted"> @slot.OperatorPhone</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (chosen.Count > 0)
+    {
+        <p><button @onclick="() => SaveCrewAsync(false)">Save crew</button></p>
+    }
+
+    @if (error is not null)
+    {
+        <div class="problem">
+            <p>@error</p>
+            @if (clashes.Count > 0)
+            {
+                <ul>
+                    @foreach (var clash in clashes)
+                    {
+                        <li>@Formats.Clash(clash)</li>
+                    }
+                </ul>
+            }
+            @if (warningFor is not null)
+            {
+                <button @onclick="GoAheadAsync">Go ahead anyway</button>
+            }
+            @if (canOverrideStudios)
+            {
+                <p><input @bind="reason" placeholder="Why this can't wait" /></p>
+                <button @onclick="() => SaveCrewAsync(false)">Override with this reason</button>
+            }
+        </div>
+    }
+
+    <h2>Next step</h2>
+    <div class="actions">
+        @if (booking.Status == BookingStatus.Draft && Api.Me!.Id == booking.ProducerId)
+        {
+            <a class="button quiet" href="bookings/@booking.Id/edit">Edit</a>
+            <button @onclick="() => MoveAsync(BookingAction.Submit)">Submit to the EP</button>
+        }
+        @if (booking.Status == BookingStatus.Draft && Api.Has(Role.BookingOfficer))
+        {
+            <button class="quiet" @onclick="AllowLateAsync">Allow after the cut-off</button>
+        }
+        @if (booking.Status == BookingStatus.EpReview && Api.Has(Role.ExecutiveProducer))
+        {
+            <select @bind="channel">
+                <option value="">No channel</option>
+                @foreach (var value in Enum.GetValues<Channel>())
+                {
+                    <option value="@value">@value</option>
+                }
+            </select>
+            <button @onclick="() => MoveAsync(BookingAction.Approve)">Approve</button>
+        }
+        @if (booking.Status == BookingStatus.Finalisation && Api.Has(Role.BookingOfficer))
+        {
+            <button @onclick="() => MoveAsync(BookingAction.Approve)">Confirm</button>
+        }
+        @if (booking.Status == BookingStatus.Confirmed && Api.Me!.Id == booking.ProducerId)
+        {
+            <button @onclick="() => MoveAsync(BookingAction.Start)">Production has started</button>
+        }
+        @if (booking.Status == BookingStatus.InProgress && Api.Me!.Id == booking.ProducerId)
+        {
+            <button @onclick="() => MoveAsync(BookingAction.End)">Production has ended</button>
+        }
+    </div>
+
+    @if (booking.Status is not (BookingStatus.Completed or BookingStatus.Cancelled))
+    {
+        <div class="actions">
+            <input @bind="note" placeholder="Reason, to send back or cancel" />
+            @if (booking.Status is BookingStatus.EpReview or BookingStatus.CrewAssignment)
+            {
+                <button class="quiet" @onclick="() => MoveAsync(BookingAction.SendBack)">Send back</button>
+            }
+            <button class="danger" @onclick="() => MoveAsync(BookingAction.Cancel)">Cancel booking</button>
+        </div>
+    }
+
+    <h2>History</h2>
+    <ul class="history">
+        @foreach (var change in booking.History)
+        {
+            <li>
+                <span class="muted">@Formats.When(change.At)</span>
+                @change.By: @Formats.Status(change.To)
+                @if (change.Note is not null)
+                {
+                    <em> "@change.Note"</em>
+                }
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private BookingResponse? booking;
+    private readonly Dictionary<Guid, List<OperatorRow>> pickers = [];
+    private readonly Dictionary<Guid, Guid?> chosen = [];
+    private bool canChooseCrew;
+    private string? error, note, reason;
+    private string channel = "";
+    private List<Clash> clashes = [];
+    private Func<Task>? warningFor;
+    private bool canOverrideStudios;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Live.Changed += ReloadAsync;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await Api.BookingAsync(Id);
+        booking = result.Value;
+        if (booking is null)
+        {
+            error = result.Error ?? "You can't open this booking.";
+            return;
+        }
+
+        canChooseCrew = booking.Status is BookingStatus.CrewAssignment or BookingStatus.Finalisation or BookingStatus.Confirmed
+                        && Api.Has(Role.Supervisor, Role.BookingOfficer);
+
+        if (canChooseCrew)
+        {
+            foreach (var division in booking.CrewSlots.Select(s => s.DivisionId).Distinct().Where(d => !pickers.ContainsKey(d)))
+                pickers[division] = (await Api.OperatorsAsync(division)).Value ?? [];
+        }
+    }
+
+    private void Choose(Guid slotId, string? value) =>
+        chosen[slotId] = Guid.TryParse(value, out var operatorId) ? operatorId : null;
+
+    private async Task SaveCrewAsync(bool acknowledge)
+    {
+        var changes = chosen.Select(c => new CrewChange(c.Key, c.Value)).ToList();
+        Show(await Api.SaveCrewAsync(Id, new CrewRequest(changes, acknowledge, reason)), () => SaveCrewAsync(true));
+    }
+
+    private async Task MoveAsync(BookingAction action, bool acknowledge = false)
+    {
+        var picked = Enum.TryParse<Channel>(channel, out var value) ? value : (Channel?)null;
+        var request = new TransitionRequest(action, note, picked, null, acknowledge);
+        Show(await Api.TransitionAsync(Id, request), () => MoveAsync(action, true));
+    }
+
+    private async Task AllowLateAsync() => Show(await Api.AllowLateAsync(Id, note ?? ""), null);
+
+    private Task GoAheadAsync() => warningFor?.Invoke() ?? Task.CompletedTask;
+
+    /// <summary>Shows what the API said: the updated booking, or why not, with anything to acknowledge.</summary>
+    private void Show(ApiResult<BookingResponse> result, Func<Task>? ifAcknowledged)
+    {
+        error = result.Error;
+        clashes = result.Clashes;
+        warningFor = result.NeedsAcknowledgement ? ifAcknowledged : null;
+        canOverrideStudios = !result.Ok
+                             && Api.Has(Role.BookingOfficer)
+                             && clashes.Count > 0
+                             && clashes.All(c => c.Kind == ClashKind.StudioNeedsCrew);
+
+        if (!result.Ok)
+            return;
+
+        booking = result.Value;
+        chosen.Clear();
+        note = reason = null;
+    }
+
+    private Task ReloadAsync() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Live.Changed -= ReloadAsync;
+}

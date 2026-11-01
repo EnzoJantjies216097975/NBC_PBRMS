@@ -1,0 +1,47 @@
+@* Development sign-in: pick a sample person. On NBC's servers this becomes the Microsoft sign-in with an NBC email. *@
+@inject ApiClient Api
+
+<div class="sign-in">
+    <h1>NBC PBRMS</h1>
+    <p>Development sign-in: choose who to be.</p>
+
+    @foreach (var (label, email) in People)
+    {
+        <button class="person" @onclick="() => SignInAsync(email)">@label</button>
+    }
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback OnSignedIn { get; set; }
+
+    private string? error;
+
+    private static readonly (string Label, string Email)[] People =
+    [
+        ("Producer, News", "producer@pbrms.test"),
+        ("Producer, Sports", "producer.sports@pbrms.test"),
+        ("Editor", "editor@pbrms.test"),
+        ("Executive Producer", "ep@pbrms.test"),
+        ("Booking Officer", "booking@pbrms.test"),
+        ("Supervisor, Camera", "supervisor@pbrms.test"),
+        ("Supervisor, Sound", "supervisor.sound@pbrms.test"),
+        ("APP operator", "app@pbrms.test"),
+        ("Operator, Camera", "camera@pbrms.test"),
+        ("TV Operations Manager", "tvops.manager@pbrms.test"),
+        ("Admin", "admin@pbrms.test")
+    ];
+
+    private async Task SignInAsync(string email)
+    {
+        var result = await Api.SignInAsync(email);
+        error = result.Error;
+
+        if (result.Ok)
+            await OnSignedIn.InvokeAsync();
+    }
+}

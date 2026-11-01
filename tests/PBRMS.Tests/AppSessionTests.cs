@@ -182,7 +182,7 @@ public class AppSessionTests(TestApi api)
         var officer = await api.SignedInClientAsync(BookingOfficer);
 
         var response = await officer.PutAsJsonAsync($"/bookings/{booking.Id}/schedule",
-            new PBRMS.Api.Endpoints.ScheduleRequest(Venue.App, null, booking.CallAt, booking.StartsAt, booking.EndsAt), Json);
+            new ScheduleRequest(Venue.App, null, booking.CallAt, booking.StartsAt, booking.EndsAt), Json);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

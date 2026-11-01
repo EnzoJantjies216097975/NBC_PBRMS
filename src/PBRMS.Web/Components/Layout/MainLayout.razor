@@ -1,0 +1,83 @@
+﻿@* The frame around every screen: the NBC header and menu. Nobody gets past it without signing in. *@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveUpdates Live
+@inject NavigationManager Navigation
+
+@if (!ready)
+{
+    <p class="page">Loading…</p>
+}
+else if (Api.Me is null)
+{
+    <SignIn OnSignedIn="StateHasChanged" />
+}
+else
+{
+    <header class="top">
+        <a class="brand" href="">NBC PBRMS</a>
+        <nav>
+            <NavLink href="" Match="NavLinkMatch.All">My work</NavLink>
+            @if (Api.Has(Role.Producer, Role.ExecutiveProducer, Role.BookingOfficer))
+            {
+                <NavLink href="bookings/new">New booking</NavLink>
+            }
+            <NavLink href="daily-roster">Daily roster</NavLink>
+            <NavLink href="app-room">APP room</NavLink>
+            <NavLink href="notifications">Notifications@(unread > 0 ? $" ({unread})" : "")</NavLink>
+        </nav>
+        <span class="who">@Api.Me.Name</span>
+        <button class="quiet" @onclick="SignOutAsync">Sign out</button>
+    </header>
+
+    <main class="page">@Body</main>
+}
+
+<div id="blazor-error-ui" data-nosnippet>
+    Something went wrong.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private bool ready;
+    private int unread;
+
+    protected override void OnInitialized() => Live.Changed += ReloadAsync;
+
+    // Reading the saved sign-in needs the browser, which is only there after the first render.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        await Api.RestoreAsync();
+        await CountUnreadAsync();
+        ready = true;
+        StateHasChanged();
+    }
+
+    private Task ReloadAsync() => InvokeAsync(async () =>
+    {
+        await CountUnreadAsync();
+        StateHasChanged();
+    });
+
+    private async Task CountUnreadAsync()
+    {
+        if (Api.Me is null)
+            return;
+
+        var notifications = await Api.NotificationsAsync();
+        unread = notifications.Value?.Count(n => n.ReadAt is null) ?? 0;
+    }
+
+    private async Task SignOutAsync()
+    {
+        await Api.SignOutAsync();
+        Navigation.NavigateTo("", forceLoad: true);
+    }
+
+    public void Dispose() => Live.Changed -= ReloadAsync;
+}
