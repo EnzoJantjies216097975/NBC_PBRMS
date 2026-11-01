@@ -484,6 +484,8 @@ $RECYCLE.BIN/
 ## PBRMS: local folders that are not part of the project
 # Claude Code tooling and generated diagrams
 skills-lock.json
+# Knowledge graph built from internal NBC documents: never commit this to a public repository
+graphify-out/
 skills/
 .acetate/
 # Docs for the current NBC Production Board. They describe NBC's internal setup
