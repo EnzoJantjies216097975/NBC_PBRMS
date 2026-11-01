@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
@@ -22,6 +23,9 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
 
     private const string TokenKey = "pbrms-token";
 
+    // The API isn't answering. Screens show this like any other refusal, rather than crashing.
+    private static readonly ApiResult Unreachable = new(false, "PBRMS can't be reached right now. Try again in a moment.", [], false);
+
     private string? token;
 
     /// <summary>Who's signed in, or null if nobody is.</summary>
@@ -39,22 +43,40 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
     /// </summary>
     public async Task<ApiResult> SignInAsync(string email)
     {
-        var response = await http.PostAsJsonAsync("auth/dev-login", new { email });
-        if (!response.IsSuccessStatusCode)
-            return await ProblemAsync(response);
+        try
+        {
+            var response = await http.PostAsJsonAsync("auth/dev-login", new { email });
+            if (!response.IsSuccessStatusCode)
+                return await ProblemAsync(response);
 
-        var body = await response.Content.ReadFromJsonAsync<TokenResponse>(Json);
-        await UseTokenAsync(body!.Token);
-        await storage.SetAsync(TokenKey, body.Token);
-        return ApiResult.Success;
+            var body = await response.Content.ReadFromJsonAsync<TokenResponse>(Json);
+            await UseTokenAsync(body!.Token);
+            await storage.SetAsync(TokenKey, body.Token);
+            return ApiResult.Success;
+        }
+        catch (HttpRequestException)
+        {
+            return Unreachable;
+        }
     }
 
-    /// <summary>Picks the sign-in back up after the page is reloaded, if this tab has one.</summary>
+    /// <summary>
+    /// Picks the sign-in back up after the page is reloaded, if this tab has one. A saved
+    /// sign-in that can't be read is thrown away: left there, it would stop the page opening
+    /// on every reload, so the person just signs in again.
+    /// </summary>
     public async Task RestoreAsync()
     {
-        var saved = await storage.GetAsync<string>(TokenKey);
-        if (saved is { Success: true, Value: { } value })
-            await UseTokenAsync(value);
+        try
+        {
+            var saved = await storage.GetAsync<string>(TokenKey);
+            if (saved is { Success: true, Value: { } value })
+                await UseTokenAsync(value);
+        }
+        catch (CryptographicException)
+        {
+            await storage.DeleteAsync(TokenKey);
+        }
     }
 
     public async Task SignOutAsync()
@@ -140,9 +162,16 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
     /// <summary>The A4 printout, or null if the API refused.</summary>
     public async Task<byte[]?> DailyRosterPdfAsync(DateOnly date)
     {
-        using var request = Request(HttpMethod.Get, $"daily-roster/{date:yyyy-MM-dd}/pdf");
-        using var response = await http.SendAsync(request);
-        return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync() : null;
+        try
+        {
+            using var request = Request(HttpMethod.Get, $"daily-roster/{date:yyyy-MM-dd}/pdf");
+            using var response = await http.SendAsync(request);
+            return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync() : null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
     }
 
     // ---- APP ----
@@ -182,8 +211,15 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
 
     public async Task MarkReadAsync(Guid id)
     {
-        using var request = Request(HttpMethod.Post, $"notifications/{id}/read");
-        using var _ = await http.SendAsync(request);
+        try
+        {
+            using var request = Request(HttpMethod.Post, $"notifications/{id}/read");
+            using var _ = await http.SendAsync(request);
+        }
+        catch (HttpRequestException)
+        {
+            // It stays unread, which is harmless: they can mark it again.
+        }
     }
 
     // ---- Calling the API ----
@@ -198,11 +234,18 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
         if (body is not null)
             request.Content = JsonContent.Create(body, options: Json);
 
-        using var response = await http.SendAsync(request);
-        if (response.IsSuccessStatusCode)
-            return ApiResult<T>.From(await response.Content.ReadFromJsonAsync<T>(Json));
+        try
+        {
+            using var response = await http.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+                return ApiResult<T>.From(await response.Content.ReadFromJsonAsync<T>(Json));
 
-        return ApiResult<T>.From(await ProblemAsync(response));
+            return ApiResult<T>.From(await ProblemAsync(response));
+        }
+        catch (HttpRequestException)
+        {
+            return ApiResult<T>.From(Unreachable);
+        }
     }
 
     private HttpRequestMessage Request(HttpMethod method, string url)
