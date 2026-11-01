@@ -1,5 +1,6 @@
-@* The daily roster for any day. Everyone can read it; the Booking Officer can add the
-   announcement and print it. It refreshes by itself as bookings are confirmed. *@
+@* The daily roster for any day. Everyone can read it; the Booking Officer can change its rows,
+   add the announcement and print it (BR-05). It refreshes by itself as bookings are confirmed
+   and as the Booking Officer changes it. *@
 @page "/daily-roster"
 @implements IDisposable
 @inject ApiClient Api
@@ -11,9 +12,10 @@
 <h1>Daily roster</h1>
 
 <div class="actions">
-    <input type="date" value="@date.ToString("yyyy-MM-dd")" @onchange="ChangeDateAsync" />
-    @if (Api.Has(Role.BookingOfficer))
+    <input type="date" value="@date.ToString("yyyy-MM-dd")" @onchange="ChangeDateAsync" aria-label="Day" />
+    @if (mayEdit)
     {
+        <button class="quiet" @onclick="() => StartAdding(null)">Add a row</button>
         <button @onclick="PrintAsync">Download A4 PDF</button>
     }
 </div>
@@ -23,21 +25,37 @@
     <p class="error">@error</p>
 }
 
+@if (rowGone)
+{
+    <p class="error">That row has gone from the sheet: its production was cancelled, moved or left off.</p>
+}
+
 @if (roster is not null)
 {
-    @if (Api.Has(Role.BookingOfficer))
+    @if (mayEdit)
     {
         <div class="actions">
-            <input class="wide" @bind="announcement" placeholder="Announcement for the top of the sheet" />
-            <button class="quiet" @onclick="SaveAnnouncementAsync">Save</button>
+            <textarea class="wide" @bind="announcement" maxlength="1000" rows="2" placeholder="Announcement for the top of the sheet" aria-label="Announcement"></textarea>
+            <button class="quiet" @onclick="SaveAnnouncementAsync">Save announcement</button>
+            @if (announcementSaved)
+            {
+                <span class="muted">Saved</span>
+            }
         </div>
     }
     else if (roster.Announcement is not null)
     {
-        <p><strong>@roster.Announcement</strong></p>
+        <p class="announcement"><strong>@roster.Announcement</strong></p>
     }
 
-    var trades = roster.Lines.SelectMany(l => l.Crew).Select(c => c.Division).Distinct().Order().ToList();
+    @if (adding)
+    {
+        <h2>Add a row</h2>
+        <DailyLineEditor @key="addingTo" Date="date" Area="@addingTo" Areas="AreasOnSheet" Trades="tradeNames" Error="@editError"
+                         Save="SaveLineAsync" Cancel="CloseEditor" />
+    }
+
+    var trades = roster.Trades();
 
     <table>
         <thead>
@@ -49,6 +67,10 @@
                 {
                     <th>@trade</th>
                 }
+                @if (mayEdit)
+                {
+                    <th></th>
+                }
             </tr>
         </thead>
         <tbody>
@@ -59,9 +81,17 @@
                     <td>@Formats.Hours(line.StartsAt, line.EndsAt)</td>
                     <td>
                         @line.Title
+                        @if (mayEdit && line.LineId is not null)
+                        {
+                            <span class="badge">@(line.BookingId is null ? "Added" : "Changed")</span>
+                        }
                         @if (line.Detail is not null)
                         {
                             <div class="muted">@line.Detail</div>
+                        }
+                        @if (line.Booked is { } booked)
+                        {
+                            <div class="differs">The booking says @Formats.Hours(booked.StartsAt, booked.EndsAt): @Crew(booked)</div>
                         }
                     </td>
                     @foreach (var trade in trades)
@@ -73,10 +103,51 @@
                             }
                         </td>
                     }
+                    @if (mayEdit)
+                    {
+                        <td class="row-actions">
+                            @if (KeyOf(line) is { } key)
+                            {
+                                <button class="quiet" @onclick="() => StartEditing(key)" aria-label="Change @line.Area, @line.Title">Change</button>
+                            }
+                            else if (line.Title == DailyRosterRules.NobodyOn)
+                            {
+                                <button class="quiet" @onclick="() => StartAdding(line.Area)" aria-label="Add a row to @line.Area">Add a row</button>
+                            }
+                            else
+                            {
+                                <span class="muted">@(line.Rostered ? "Monthly roster" : "APP booking")</span>
+                            }
+                        </td>
+                    }
                 </tr>
+
+                @if (editing is not null && KeyOf(line) == editing)
+                {
+                    <tr>
+                        <td colspan="@(trades.Count + 4)">
+                            <DailyLineEditor @key="editing" Line="line" Date="date" Areas="AreasOnSheet" Trades="tradeNames" Error="@editError"
+                                             Save="SaveLineAsync" Undo="UndoLineAsync" Cancel="CloseEditor" />
+                        </td>
+                    </tr>
+                }
             }
         </tbody>
     </table>
+
+    @if (roster.Hidden.Count > 0)
+    {
+        <h2>Left off the sheet</h2>
+        <ul class="rows plain">
+            @foreach (var line in roster.Hidden)
+            {
+                <li>
+                    <span>@line.Title <span class="muted">@line.Area @Formats.Hours(line.StartsAt, line.EndsAt)</span></span>
+                    <button class="quiet" @onclick="() => PutBackAsync(line.LineId!.Value)" aria-label="Put back @line.Title">Put back</button>
+                </li>
+            }
+        </ul>
+    }
 
     @if (roster.Undecided.Count > 0)
     {
@@ -102,20 +173,46 @@
 @code {
     private DateOnly date = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
     private DailyRosterView? roster;
-    private string? announcement, error;
+    private string? announcement, error, editError;
+    private bool announcementSaved, adding;
+    private string? addingTo;
+
+    // Kept apart from the error, which every live refresh replaces.
+    private bool rowGone;
+
+    // The row whose form is open.
+    private string? editing;
+
+    private List<string> tradeNames = [];
+
+    private bool mayEdit => Api.Has(Role.BookingOfficer);
+
+    private IEnumerable<string> AreasOnSheet => roster?.Lines.Select(l => l.Area).Distinct() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
         Live.Changed += ReloadAsync;
+
+        if (mayEdit)
+        {
+            var units = (await Api.OrgUnitsAsync()).Value ?? [];
+            tradeNames = units.Where(u => u.Kind == OrgUnitKind.TvOpsDivision).Select(u => u.Name).ToList();
+        }
+
         await LoadAsync();
+        announcement = roster?.Announcement;
     }
 
     private async Task LoadAsync()
     {
-        var result = await Api.DailyRosterAsync(date);
+        // Answers can arrive out of order, so one for a day no longer picked is dropped.
+        var asked = date;
+        var result = await Api.DailyRosterAsync(asked);
+        if (asked != date)
+            return;
+
         roster = result.Value;
         error = result.Error;
-        announcement = roster?.Announcement;
     }
 
     private async Task ChangeDateAsync(ChangeEventArgs change)
@@ -123,8 +220,59 @@
         if (DateOnly.TryParse(change.Value?.ToString(), out var picked))
         {
             date = picked;
+            CloseEditor();
+            announcementSaved = false;
             await LoadAsync();
+            announcement = roster?.Announcement;
         }
+    }
+
+    /// <summary>Only rows that are productions or the Booking Officer's own can be changed. The rest come from elsewhere.</summary>
+    private static string? KeyOf(DailyLine line) => (line.BookingId ?? line.LineId)?.ToString();
+
+    private static string Crew(DailyLine line) =>
+        line.Crew.Count == 0 ? "no names" : string.Join(", ", line.Crew.Select(c => $"{c.Division}: {c.Name}"));
+
+    private void StartEditing(string key)
+    {
+        CloseEditor();
+        editing = key;
+    }
+
+    private void StartAdding(string? area)
+    {
+        CloseEditor();
+        adding = true;
+        addingTo = area;
+    }
+
+    private void CloseEditor()
+    {
+        editing = addingTo = editError = null;
+        adding = rowGone = false;
+    }
+
+    private async Task SaveLineAsync(DailyLineForm form) => ShowSaved(await Api.SaveDailyLineAsync(date, form));
+
+    private async Task UndoLineAsync(Guid lineId) => ShowSaved(await Api.DiscardDailyLineAsync(date, lineId));
+
+    private void ShowSaved(ApiResult<DailyRosterView> result)
+    {
+        if (!result.Ok)
+        {
+            editError = result.Error;
+            return;
+        }
+
+        roster = result.Value;
+        CloseEditor();
+    }
+
+    private async Task PutBackAsync(Guid lineId)
+    {
+        var result = await Api.DiscardDailyLineAsync(date, lineId);
+        error = result.Error;
+        roster = result.Value ?? roster;
     }
 
     private async Task SaveAnnouncementAsync()
@@ -132,6 +280,7 @@
         var result = await Api.SetAnnouncementAsync(date, announcement);
         error = result.Error;
         roster = result.Value ?? roster;
+        announcementSaved = result.Ok;
     }
 
     private async Task PrintAsync()
@@ -147,9 +296,25 @@
         await Browser.InvokeVoidAsync("saveFile", name, Convert.ToBase64String(pdf));
     }
 
+    /// <summary>
+    /// A live refresh must not take away what's being typed: the announcement only follows the
+    /// saved one if it hadn't been touched, and an open row form keeps its own fields.
+    /// </summary>
     private Task ReloadAsync() => InvokeAsync(async () =>
     {
+        var typing = (announcement ?? "") != (roster?.Announcement ?? "");
+
         await LoadAsync();
+
+        if (!typing)
+            announcement = roster?.Announcement;
+
+        if (editing is not null && roster?.Lines.Any(l => KeyOf(l) == editing) != true)
+        {
+            CloseEditor();
+            rowGone = true;
+        }
+
         StateHasChanged();
     });
 

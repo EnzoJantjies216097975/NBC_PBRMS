@@ -20,6 +20,7 @@ public class LivePush(IHubContext<LiveHub> hub, ILogger<LivePush> logger)
     private readonly Dictionary<Guid, Guid> notificationUsers = [];
     private readonly HashSet<Guid> bookings = [];
     private readonly HashSet<Guid> rosterDivisions = [];
+    private readonly HashSet<DateOnly> dailyRosters = [];
     private bool appRoomChanged;
 
     /// <summary>Notes what's about to be saved. The ids exist by now; the messages wait for the commit.</summary>
@@ -38,6 +39,9 @@ public class LivePush(IHubContext<LiveHub> hub, ILogger<LivePush> logger)
         foreach (var entry in context.ChangeTracker.Entries<MonthlyRoster>().Where(e => e.State is EntityState.Added or EntityState.Modified))
             rosterDivisions.Add(entry.Entity.DivisionId);
 
+        foreach (var entry in context.ChangeTracker.Entries<DailyRoster>().Where(e => e.State is EntityState.Added or EntityState.Modified))
+            dailyRosters.Add(entry.Entity.Date);
+
         appRoomChanged |= context.ChangeTracker.Entries<AppSession>().Any(e => e.State is EntityState.Added or EntityState.Modified);
     }
 
@@ -55,6 +59,9 @@ public class LivePush(IHubContext<LiveHub> hub, ILogger<LivePush> logger)
             foreach (var division in rosterDivisions)
                 await hub.Clients.All.SendAsync("rosterChanged", new LiveRosterChange(division));
 
+            foreach (var date in dailyRosters)
+                await hub.Clients.All.SendAsync("dailyRosterChanged", new LiveDailyRosterChange(date));
+
             if (appRoomChanged)
                 await hub.Clients.All.SendAsync("appRoomChanged");
         }
@@ -67,6 +74,7 @@ public class LivePush(IHubContext<LiveHub> hub, ILogger<LivePush> logger)
         notificationUsers.Clear();
         bookings.Clear();
         rosterDivisions.Clear();
+        dailyRosters.Clear();
         appRoomChanged = false;
     }
 }

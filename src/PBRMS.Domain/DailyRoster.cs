@@ -69,6 +69,10 @@ public class DailyRosterCrew
 /// <summary>One row of the sheet as people see it, whether generated or edited.</summary>
 /// <param name="LineId">The saved line, if the Booking Officer changed this row or added it.</param>
 /// <param name="Rostered">True if this row came from the monthly roster rather than a production.</param>
+/// <param name="Booked">
+/// What the production itself says, if a changed row now gives different hours or crew. A
+/// supervisor may have changed the crew since, so the Booking Officer must be able to see it.
+/// </param>
 public record DailyLine(
     Guid? LineId,
     Guid? BookingId,
@@ -78,7 +82,8 @@ public record DailyLine(
     string Title,
     string? Detail,
     List<DailyCrewMember> Crew,
-    bool Rostered = false);
+    bool Rostered = false,
+    DailyLine? Booked = null);
 
 public record DailyCrewMember(string Division, string Name);
 
@@ -86,7 +91,23 @@ public record DailyCrewMember(string Division, string Name);
 public record UndecidedBooking(Guid BookingId, int ProductionNo, string Title, DateTimeOffset StartsAt, BookingStatus Status, List<string> OpenPositions);
 
 /// <summary>The sheet for one day.</summary>
-public record DailyRosterView(DateOnly Date, string? Announcement, List<DailyLine> Lines, List<UndecidedBooking> Undecided);
+/// <param name="Hidden">Productions the Booking Officer left off the sheet, so they can be put back.</param>
+public record DailyRosterView(DateOnly Date, string? Announcement, List<DailyLine> Lines, List<UndecidedBooking> Undecided, List<DailyLine> Hidden)
+{
+    // The trades the floor expects first, in this order. Any others follow alphabetically.
+    private static readonly string[] FirstTrades = ["Camera", "Sound", "Lighting"];
+
+    /// <summary>The sheet's trade columns, the same on screen and on paper.</summary>
+    public List<string> Trades()
+    {
+        var used = Lines.SelectMany(l => l.Crew).Select(c => c.Division).Distinct();
+        return FirstTrades.Concat(used.Except(FirstTrades).Order()).ToList();
+    }
+
+    /// <summary>The sheet as everyone but the Booking Officer reads it, without their working notes.</summary>
+    public DailyRosterView ForReaders() =>
+        this with { Hidden = [], Lines = Lines.Select(l => l with { Booked = null }).ToList() };
+}
 
 /// <summary>Where things go on the sheet. The rows follow the board's roster-rows.json.</summary>
 public static class DailyRosterRules

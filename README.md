@@ -62,6 +62,11 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `PUT /rosters/{divisionId}/{yyyy-MM}` | Save changed cells: `{ "entries": [{ "operatorId": "...", "date": "2027-03-01", "code": "A1" }] }`. Editing a published roster starts a new draft. |
 | `GET /rosters/{divisionId}/{yyyy-MM}/clashes` | Confirmed bookings this roster would upset (the division's supervisor and the Booking Officer) |
 | `POST /rosters/{divisionId}/{yyyy-MM}/publish` | Put the draft in force. Clashes come back as warnings. |
+| `GET /daily-roster/{yyyy-MM-dd}` | The sheet for a day, for everyone. The Booking Officer also gets what's left off it, and where a changed row differs from its booking. |
+| `PUT /daily-roster/{yyyy-MM-dd}/announcement` | `{ "text": "..." }`, printed at the top (Booking Officer) |
+| `PUT /daily-roster/{yyyy-MM-dd}/lines` | Change a production's row, leave it off with `hidden: true`, or add a row (Booking Officer). This changes the sheet only, not the crew. |
+| `DELETE /daily-roster/{yyyy-MM-dd}/lines/{lineId}` | Undo a change, or remove an added row (Booking Officer) |
+| `GET /daily-roster/{yyyy-MM-dd}/pdf` | The A4 printout (Booking Officer) |
 
 Send every request except health and dev-login with `Authorization: Bearer <token>`.
 
@@ -99,7 +104,7 @@ Then open <http://localhost:5103> and pick who to be. Each browser tab signs in 
 can open two tabs as different people and watch changes arrive live.
 
 So far it has: My work, the booking form, booking pages (approve, crew, confirm), the daily roster
-with its PDF, the monthly roster grid, shift codes, the APP room, and notifications. On NBC's servers the sign-in page becomes the
+with row editing and its PDF, the monthly roster grid, shift codes, the APP room, and notifications. On NBC's servers the sign-in page becomes the
 Microsoft sign-in, and `Api:BaseUrl` must point at the API.
 
 ## How a booking moves

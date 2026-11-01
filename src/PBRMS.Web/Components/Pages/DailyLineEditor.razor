@@ -1,0 +1,140 @@
+@* The form for one row of the daily roster: changing a production's row, or adding one.
+   It changes the sheet only, so it says so: the people on a production are changed on the
+   production, which keeps the clash checks and tells those affected. *@
+
+<div class="line-editor">
+    <div class="form">
+        <label>Area <input @bind="area" maxlength="40" list="sheet-areas" placeholder="Studio 1" /></label>
+        <label>Title <input @bind="title" maxlength="200" /></label>
+        <label>Detail <input @bind="detail" maxlength="300" placeholder="Where it is, who to phone" /></label>
+        <label>Starts <input type="time" @bind="start" /></label>
+        <label>Ends <input type="time" @bind="end" /></label>
+    </div>
+
+    <datalist id="sheet-areas">
+        @foreach (var name in Areas)
+        {
+            <option value="@name"></option>
+        }
+    </datalist>
+
+    <h3>Names on the sheet</h3>
+    @foreach (var person in crew)
+    {
+        <div class="slot">
+            <select @bind="person.Division" aria-label="Trade">
+                @foreach (var trade in Trades.Union([person.Division]))
+                {
+                    <option value="@trade">@trade</option>
+                }
+            </select>
+            <input @bind="person.Name" maxlength="170" placeholder="Name" aria-label="Name" />
+            <button class="quiet" @onclick="() => crew.Remove(person)">Remove</button>
+        </div>
+    }
+    <button class="quiet" @onclick="AddName">Add a name</button>
+
+    @if (Line?.BookingId is { } booking)
+    {
+        <p class="muted">
+            This changes the printed sheet only, and nobody is told. To change who's really on
+            this production, <a href="bookings/@booking">change its crew</a>.
+        </p>
+    }
+
+    @if (Error is not null)
+    {
+        <p class="error">@Error</p>
+    }
+
+    <div class="actions">
+        <button @onclick="() => SaveAsync(hidden: false)">Save row</button>
+        @if (Line?.BookingId is not null)
+        {
+            <button class="danger" @onclick="() => SaveAsync(hidden: true)">Leave off the sheet</button>
+        }
+        @if (Line?.LineId is { } saved)
+        {
+            <button class="quiet" @onclick="() => Undo.InvokeAsync(saved)">@(Line.BookingId is null ? "Remove row" : "Undo my changes")</button>
+        }
+        <button class="quiet" @onclick="Cancel">Cancel</button>
+    </div>
+</div>
+
+@code {
+    /// <summary>The row being changed, or null when adding a new one.</summary>
+    [Parameter] public DailyLine? Line { get; set; }
+
+    /// <summary>The day of the sheet.</summary>
+    [Parameter, EditorRequired] public DateOnly Date { get; set; }
+
+    /// <summary>Where a new row goes, if that's already known.</summary>
+    [Parameter] public string? Area { get; set; }
+
+    /// <summary>The areas to suggest. Others can be typed.</summary>
+    [Parameter] public IEnumerable<string> Areas { get; set; } = [];
+
+    /// <summary>The trades to choose from.</summary>
+    [Parameter] public IEnumerable<string> Trades { get; set; } = [];
+
+    /// <summary>Why the API refused the last save.</summary>
+    [Parameter] public string? Error { get; set; }
+
+    [Parameter] public EventCallback<DailyLineForm> Save { get; set; }
+
+    /// <summary>Throws away the saved row with this id.</summary>
+    [Parameter] public EventCallback<Guid> Undo { get; set; }
+
+    [Parameter] public EventCallback Cancel { get; set; }
+
+    private string area = "", title = "";
+    private string? detail;
+    private TimeOnly? start, end;
+    private List<CrewRow> crew = [];
+
+    /// <summary>A name on the form, which changes one field at a time, unlike the API's record.</summary>
+    private sealed class CrewRow
+    {
+        public string Division { get; set; } = "";
+        public string Name { get; set; } = "";
+    }
+
+    protected override void OnInitialized()
+    {
+        area = Line?.Area ?? Area ?? "";
+        title = Line?.Title ?? "";
+        detail = Line?.Detail;
+        start = ClockOf(Line?.StartsAt);
+        end = ClockOf(Line?.EndsAt);
+        crew = (Line?.Crew ?? []).Select(c => new CrewRow { Division = c.Division, Name = c.Name }).ToList();
+    }
+
+    private void AddName() => crew.Add(new CrewRow { Division = Trades.FirstOrDefault() ?? "" });
+
+    private async Task SaveAsync(bool hidden)
+    {
+        var (from, to) = Moments();
+        await Save.InvokeAsync(new DailyLineForm(
+            Line?.LineId, Line?.BookingId, hidden, area, from, to, title,
+            string.IsNullOrWhiteSpace(detail) ? null : detail,
+            crew.Select(c => new DailyCrewMember(c.Division, c.Name)).ToList()));
+    }
+
+    /// <summary>
+    /// The times as moments. Hours left alone keep their own dates, which matters for a trip
+    /// that spans several days. New hours are on this sheet's day, and as with shift codes, an
+    /// end before the start runs past midnight.
+    /// </summary>
+    private (DateTimeOffset? From, DateTimeOffset? To) Moments()
+    {
+        if (start == ClockOf(Line?.StartsAt) && end == ClockOf(Line?.EndsAt))
+            return (Line?.StartsAt, Line?.EndsAt);
+
+        DateTimeOffset? from = start is { } s ? NbcTime.At(Date, s) : null;
+        DateTimeOffset? to = end is { } e ? NbcTime.At(end > start ? Date : Date.AddDays(1), e) : null;
+        return (from, to);
+    }
+
+    private static TimeOnly? ClockOf(DateTimeOffset? moment) =>
+        moment is { } value ? TimeOnly.FromTimeSpan(value.ToOffset(NbcTime.Offset).TimeOfDay) : null;
+}

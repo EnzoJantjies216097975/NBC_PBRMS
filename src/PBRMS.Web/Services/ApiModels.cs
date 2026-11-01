@@ -50,6 +50,11 @@ public record ShiftCode(
     TimeOnly? Start, TimeOnly? End, TimeOnly? SecondStart, TimeOnly? SecondEnd,
     string? Colour, bool IsActive, Venue? Studio);
 
+/// <summary>A row of the daily roster as the Booking Officer wants it.</summary>
+public record DailyLineForm(
+    Guid? Id, Guid? BookingId, bool Hidden, string Area, DateTimeOffset? StartsAt, DateTimeOffset? EndsAt,
+    string Title, string? Detail, List<DailyCrewMember> Crew);
+
 public record AppOperatorRow(Guid Id, string Name);
 
 public record AppBusyRow(DateTimeOffset StartsAt, DateTimeOffset EndsAt, string Operator);

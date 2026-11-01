@@ -14,9 +14,6 @@ namespace PBRMS.Api;
 /// </summary>
 public static class DailyRosterPdf
 {
-    // The trades the floor expects first, in this order. Any others follow.
-    private static readonly string[] FirstColumns = ["Camera", "Sound", "Lighting"];
-
     private const string Font = "Arial";
 
     /// <summary>The sheet's file name, as the board names it: Roster_Tue_15092026.pdf.</summary>
@@ -71,7 +68,7 @@ public static class DailyRosterPdf
 
     private static void AddTable(Section section, DailyRosterView roster)
     {
-        var trades = TradesOn(roster);
+        var trades = roster.Trades();
 
         var table = section.AddTable();
         table.Borders.Width = 0.5;
@@ -135,13 +132,6 @@ public static class DailyRosterPdf
             var open = booking.OpenPositions.Count == 0 ? "" : $": needs {string.Join(", ", booking.OpenPositions)}";
             section.AddParagraph($"#{booking.ProductionNo} {booking.Title} ({NbcTime.Text(booking.StartsAt)}){open}");
         }
-    }
-
-    /// <summary>The trades on the sheet: the usual three, then any others alphabetically.</summary>
-    private static List<string> TradesOn(DailyRosterView roster)
-    {
-        var used = roster.Lines.SelectMany(l => l.Crew).Select(c => c.Division).Distinct().ToList();
-        return FirstColumns.Concat(used.Except(FirstColumns).Order()).ToList();
     }
 
     private static string TimeOf(DailyLine line) =>

@@ -25,7 +25,7 @@ public sealed class LiveUpdates(IConfiguration config) : IAsyncDisposable
             .WithAutomaticReconnect()
             .Build();
 
-        foreach (var message in new[] { "notification", "bookingChanged", "rosterChanged" })
+        foreach (var message in new[] { "notification", "bookingChanged", "rosterChanged", "dailyRosterChanged" })
             connection.On<JsonElement>(message, _ => TellPagesAsync());
         connection.On("appRoomChanged", TellPagesAsync);
 

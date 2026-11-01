@@ -73,6 +73,20 @@ public class LiveUpdateTests(TestApi api)
     }
 
     [Fact]
+    public async Task Everyone_hears_that_a_daily_roster_changed_so_their_screen_can_refresh()
+    {
+        await using var operatorScreen = await ConnectAsync("operator@pbrms.test");
+        var date = new DateOnly(2036, 3, 4);
+        var changed = Listen<LiveDailyRosterChange>(operatorScreen, "dailyRosterChanged", c => c.Date == date);
+        var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
+
+        var saved = await bookingOfficer.PutAsJsonAsync($"/daily-roster/{date:yyyy-MM-dd}/announcement", new { text = "Fire drill" }, Json);
+
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        Assert.Equal(date, (await changed.WaitAsync(Patience)).Date);
+    }
+
+    [Fact]
     public async Task A_change_that_is_refused_sends_nothing()
     {
         await using var ep = await ConnectAsync("ep@pbrms.test");

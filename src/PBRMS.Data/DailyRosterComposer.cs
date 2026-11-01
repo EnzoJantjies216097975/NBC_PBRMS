@@ -14,7 +14,7 @@ public class DailyRosterComposer(PbrmsDbContext db, ClashChecker clashChecker)
 
     public async Task<DailyRosterView> ComposeAsync(DateOnly date)
     {
-        var (dayStart, dayEnd) = (NbcTime.At(date, TimeOnly.MinValue), NbcTime.At(date.AddDays(1), TimeOnly.MinValue));
+        var (dayStart, dayEnd) = DayOf(date);
 
         var bookings = await db.Bookings.AsNoTracking()
             .Include(b => b.Producer)
@@ -36,15 +36,26 @@ public class DailyRosterComposer(PbrmsDbContext db, ClashChecker clashChecker)
             .Include(r => r.Lines).ThenInclude(l => l.Crew)
             .FirstOrDefaultAsync(r => r.Date == date);
 
-        lines = ApplyEdits(lines, saved);
-        AddEmptyStudios(lines);
+        var (shown, hidden) = ApplyEdits(lines, saved);
+        AddEmptyStudios(shown);
 
         return new DailyRosterView(
             date,
             saved?.Announcement,
-            lines.OrderBy(l => DailyRosterRules.Rank(l.Area)).ThenBy(l => l.Area).ThenBy(l => l.StartsAt).ToList(),
-            bookings.Where(b => StillBeingDecided.Contains(b.Status)).Select(Undecided).ToList());
+            shown.OrderBy(l => DailyRosterRules.Rank(l.Area)).ThenBy(l => l.Area).ThenBy(l => l.StartsAt).ToList(),
+            bookings.Where(b => StillBeingDecided.Contains(b.Status)).Select(Undecided).ToList(),
+            hidden);
     }
+
+    /// <summary>True if this production has a row on that day's sheet, and so can have it changed.</summary>
+    public async Task<bool> IsOnTheSheetAsync(Guid bookingId, DateOnly date)
+    {
+        var (dayStart, dayEnd) = DayOf(date);
+        return await db.Bookings.AnyAsync(b => b.Id == bookingId && b.StartsAt < dayEnd && dayStart < b.EndsAt && OnTheSheet.Contains(b.Status));
+    }
+
+    private static (DateTimeOffset Start, DateTimeOffset End) DayOf(DateOnly date) =>
+        (NbcTime.At(date, TimeOnly.MinValue), NbcTime.At(date.AddDays(1), TimeOnly.MinValue));
 
     /// <summary>A row per confirmed booking. Rows such as "Production 1" are numbered in start-time order.</summary>
     private static List<DailyLine> BookingLines(List<Booking> confirmed)
@@ -145,22 +156,37 @@ public class DailyRosterComposer(PbrmsDbContext db, ClashChecker clashChecker)
                 false))
             .ToListAsync();
 
-    /// <summary>Lays the Booking Officer's changes over the generated rows.</summary>
-    private static List<DailyLine> ApplyEdits(List<DailyLine> lines, DailyRoster? saved)
+    /// <summary>
+    /// Lays the Booking Officer's changes over the generated rows. A change lasts only as long
+    /// as its production is on the sheet: cancelled or moved to another day, its row goes too.
+    /// </summary>
+    private static (List<DailyLine> Shown, List<DailyLine> Hidden) ApplyEdits(List<DailyLine> lines, DailyRoster? saved)
     {
         if (saved is null)
-            return lines;
+            return (lines, []);
 
-        var replaced = saved.Lines.Where(l => l.BookingId is not null).Select(l => l.BookingId).ToHashSet();
-        var kept = lines.Where(l => l.BookingId is null || !replaced.Contains(l.BookingId)).ToList();
+        var generated = lines.Where(l => l.BookingId is not null).ToDictionary(l => l.BookingId!.Value);
+        var edits = saved.Lines.Where(l => l.BookingId is null || generated.ContainsKey(l.BookingId.Value)).ToList();
 
-        kept.AddRange(saved.Lines
-            .Where(l => !l.Hidden)
-            .Select(l => new DailyLine(
-                l.Id, l.BookingId, l.Area, l.StartsAt, l.EndsAt, l.Title, l.Detail,
-                l.Crew.Select(c => new DailyCrewMember(c.Division, c.Name)).ToList())));
+        var replaced = edits.Where(l => l.BookingId is not null).Select(l => l.BookingId).ToHashSet();
+        var shown = lines.Where(l => l.BookingId is null || !replaced.Contains(l.BookingId)).ToList();
 
-        return kept;
+        shown.AddRange(edits.Where(l => !l.Hidden).Select(l => Edited(l, generated)));
+        return (shown, edits.Where(l => l.Hidden).Select(l => Edited(l, generated)).ToList());
+    }
+
+    private static DailyLine Edited(DailyRosterLine saved, Dictionary<Guid, DailyLine> generated)
+    {
+        var line = new DailyLine(
+            saved.Id, saved.BookingId, saved.Area, saved.StartsAt, saved.EndsAt, saved.Title, saved.Detail,
+            saved.Crew.Select(c => new DailyCrewMember(c.Division, c.Name)).ToList());
+
+        if (saved.BookingId is not { } bookingId)
+            return line;
+
+        var booked = generated[bookingId];
+        var agrees = line.StartsAt == booked.StartsAt && line.EndsAt == booked.EndsAt && line.Crew.ToHashSet().SetEquals(booked.Crew);
+        return agrees ? line : line with { Booked = booked };
     }
 
     /// <summary>A studio with nothing in it still gets a row that says so (the board's rule).</summary>

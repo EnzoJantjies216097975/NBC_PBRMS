@@ -130,6 +130,13 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
     public Task<ApiResult<DailyRosterView>> SetAnnouncementAsync(DateOnly date, string? text) =>
         SendAsync<DailyRosterView>(HttpMethod.Put, $"daily-roster/{date:yyyy-MM-dd}/announcement", new { text });
 
+    public Task<ApiResult<DailyRosterView>> SaveDailyLineAsync(DateOnly date, DailyLineForm form) =>
+        SendAsync<DailyRosterView>(HttpMethod.Put, $"daily-roster/{date:yyyy-MM-dd}/lines", form);
+
+    /// <summary>Takes a change off the sheet: a production goes back to what was generated, and an added row goes away.</summary>
+    public Task<ApiResult<DailyRosterView>> DiscardDailyLineAsync(DateOnly date, Guid lineId) =>
+        SendAsync<DailyRosterView>(HttpMethod.Delete, $"daily-roster/{date:yyyy-MM-dd}/lines/{lineId}", null);
+
     /// <summary>The A4 printout, or null if the API refused.</summary>
     public async Task<byte[]?> DailyRosterPdfAsync(DateOnly date)
     {

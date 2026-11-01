@@ -157,6 +157,117 @@ public class DailyRosterTests(TestApi api)
     }
 
     [Fact]
+    public async Task A_production_left_off_the_sheet_can_be_put_back()
+    {
+        var day = NewRosterDay();
+        var booking = await api.AtFinalisationAsync(day, Venue.Studio2);
+        await api.TransitionAsync(BookingOfficer, booking.Id, BookingAction.Approve);
+        var client = await api.SignedInClientAsync(BookingOfficer);
+        await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, booking.Id, true, "Studio 2", day, day.AddHours(1), "Morning Show", null, null), Json);
+
+        var hidden = Assert.Single((await SheetAsync(day)).Hidden);
+        Assert.Equal(booking.Id, hidden.BookingId);
+
+        await client.DeleteAsync($"{LinesUrl(day)}/{hidden.LineId}");
+
+        var sheet = await SheetAsync(day);
+        Assert.Empty(sheet.Hidden);
+        Assert.Contains(sheet.Lines, l => l.BookingId == booking.Id);
+    }
+
+    [Fact]
+    public async Task Only_the_booking_officer_sees_whats_been_left_off_or_changed()
+    {
+        var day = NewRosterDay();
+        var (kept, left) = (await api.AtFinalisationAsync(day, Venue.Studio1), await api.AtFinalisationAsync(day, Venue.Studio2));
+        await api.TransitionAsync(BookingOfficer, kept.Id, BookingAction.Approve);
+        await api.TransitionAsync(BookingOfficer, left.Id, BookingAction.Approve);
+        var client = await api.SignedInClientAsync(BookingOfficer);
+        await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, kept.Id, false, "Studio 1", day, day.AddHours(1), "Morning Show", null, [new("Camera", "Stand In")]), Json);
+        await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, left.Id, true, "Studio 2", day, day.AddHours(1), "Private", null, null), Json);
+
+        var reader = await api.SignedInClientAsync("operator@pbrms.test");
+        var sheet = (await reader.GetFromJsonAsync<DailyRosterView>($"/daily-roster/{Date(day)}", Json))!;
+
+        Assert.Empty(sheet.Hidden);
+        Assert.Null(sheet.Lines.Single(l => l.BookingId == kept.Id).Booked);
+    }
+
+    [Fact]
+    public async Task A_changed_row_leaves_the_sheet_when_its_production_is_cancelled()
+    {
+        var day = NewRosterDay();
+        var booking = await api.AtFinalisationAsync(day, Venue.Studio1);
+        await api.TransitionAsync(BookingOfficer, booking.Id, BookingAction.Approve);
+        var client = await api.SignedInClientAsync(BookingOfficer);
+        await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, booking.Id, false, "Studio 1", day, day.AddHours(1), "Morning Show (shortened)", null, null), Json);
+
+        await api.TransitionAsync(BookingOfficer, booking.Id, BookingAction.Cancel, "Presenter ill");
+
+        Assert.DoesNotContain((await SheetAsync(day)).Lines, l => l.BookingId == booking.Id);
+    }
+
+    [Fact]
+    public async Task A_row_that_says_something_different_from_its_booking_shows_what_the_booking_says()
+    {
+        var day = NewRosterDay();
+        var booking = await api.AtFinalisationAsync(day, Venue.Studio1);
+        await api.TransitionAsync(BookingOfficer, booking.Id, BookingAction.Approve);
+        var client = await api.SignedInClientAsync(BookingOfficer);
+        var line = (await SheetAsync(day)).Lines.Single(l => l.BookingId == booking.Id);
+        var crew = line.Crew.Select(c => new DailyCrewForm(c.Division, c.Name)).ToList();
+
+        // Rewording a row is fine: it says the same thing about who and when.
+        await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, booking.Id, false, line.Area, line.StartsAt, line.EndsAt, "Morning Show (shortened)", null, crew), Json);
+        Assert.Null((await SheetAsync(day)).Lines.Single(l => l.BookingId == booking.Id).Booked);
+
+        await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, booking.Id, false, line.Area, line.StartsAt, line.EndsAt, "Morning Show", null, [new("Camera", "Stand In")]), Json);
+
+        var changed = (await SheetAsync(day)).Lines.Single(l => l.BookingId == booking.Id);
+        Assert.Equal("Stand In", Assert.Single(changed.Crew).Name);
+        Assert.Equal(line.Crew, changed.Booked!.Crew);
+    }
+
+    [Fact]
+    public async Task Saving_a_row_again_replaces_it()
+    {
+        var day = NewRosterDay();
+        var client = await api.SignedInClientAsync(BookingOfficer);
+        await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, null, false, "Studio 3", day, day.AddHours(2), "Rig check", null, [new("Camera", "One"), new("Sound", "Two")]), Json);
+        var saved = (await SheetAsync(day)).Lines.Single(l => l.Title == "Rig check");
+
+        var again = await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(saved.LineId, null, false, "Studio 3", day, day.AddHours(2), "Rig check", null, [new("Camera", "Three")]), Json);
+
+        Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+        Assert.Equal("Three", Assert.Single((await SheetAsync(day)).Lines.Single(l => l.Title == "Rig check").Crew).Name);
+    }
+
+    [Fact]
+    public async Task A_row_needs_both_its_times_or_neither()
+    {
+        var day = NewRosterDay();
+        var client = await api.SignedInClientAsync(BookingOfficer);
+
+        var halfTimes = await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, null, false, "Studio 3", day, null, "Rig check", null, null), Json);
+        var noTimes = await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, null, false, "Studio 3", null, null, "All day: rig check", null, null), Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, halfTimes.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, noTimes.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_production_that_isnt_on_that_days_sheet_cant_be_changed_on_it()
+    {
+        var day = NewRosterDay();
+        var booking = await api.AtFinalisationAsync(day, Venue.Studio1); // not confirmed yet
+        var client = await api.SignedInClientAsync(BookingOfficer);
+
+        var response = await client.PutAsJsonAsync(LinesUrl(day), new DailyLineForm(null, booking.Id, false, "Studio 1", day, day.AddHours(1), "Morning Show", null, null), Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task The_announcement_shows_on_the_sheet()
     {
         var day = NewRosterDay();

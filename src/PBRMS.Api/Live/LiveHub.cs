@@ -16,6 +16,8 @@ namespace PBRMS.Api.Live;
 ///                    each person still sees only what the API allows them to.
 ///   "rosterChanged"  A division's monthly roster was saved, sent to everyone, the same way:
 ///                    <see cref="LiveRosterChange"/>.
+///   "dailyRosterChanged" The Booking Officer changed a day's sheet, sent to everyone:
+///                    <see cref="LiveDailyRosterChange"/>.
 /// </summary>
 [Authorize]
 public class LiveHub : Hub;
@@ -25,6 +27,8 @@ public record LiveNotification(Guid Id, string Text, Guid? BookingId);
 public record LiveBookingChange(Guid Id);
 
 public record LiveRosterChange(Guid DivisionId);
+
+public record LiveDailyRosterChange(DateOnly Date);
 
 /// <summary>Tells SignalR that a connection's user is their PBRMS user, so a message can go to one person.</summary>
 public class PbrmsUserIdProvider : IUserIdProvider

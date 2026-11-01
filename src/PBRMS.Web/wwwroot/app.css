@@ -58,9 +58,9 @@ button, .button {
 
 button.quiet { background: transparent; color: var(--brand); }
 button.danger { background: transparent; color: var(--alert); border-color: var(--alert); }
-button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 
-input, select {
+input, select, textarea {
     min-height: 34px;
     padding: 5px 8px;
     border: 1px solid var(--line);
@@ -72,7 +72,7 @@ input, select {
 .form { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; }
 .form label { display: grid; gap: 3px; font-size: 13px; font-weight: 700; }
 .form label.tick { display: flex; align-items: center; gap: 8px; font-weight: 400; }
-.form input:not([type=checkbox]), .form select { width: 100%; }
+.form input:not([type=checkbox]), .form select { width: 100%; font-weight: 400; }
 
 .slot, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
 .actions .wide { flex: 1; min-width: 240px; }
@@ -161,6 +161,12 @@ th { background: #EFEDE5; font-size: 13px; }
 }
 .roster button.cell:hover { outline: 1px solid var(--brand); outline-offset: -1px; }
 
+/* The daily roster. Line breaks in the announcement are the Booking Officer's own. */
+.announcement { white-space: pre-line; }
+.differs { margin-top: 4px; padding-left: 6px; border-left: 3px solid var(--alert); font-size: 13px; }
+.line-editor { padding: 12px; background: var(--paper); border-left: 4px solid var(--brand); }
+.line-editor h3 { margin: 14px 0 4px; font-size: 13px; }
+
 tr.retired { color: var(--muted); }
 td.code { box-shadow: inset 4px 0 0 var(--code, transparent); padding-left: 12px; }
 .row-actions { white-space: nowrap; }
@@ -172,6 +178,9 @@ td.code { box-shadow: inset 4px 0 0 var(--code, transparent); padding-left: 12px
     table { display: block; overflow-x: auto; }
     .roster { display: table; }
     .roster .who-col { min-width: 120px; }
+
+    /* The row form sits inside the table, which scrolls sideways. It stays on screen instead. */
+    .line-editor { position: sticky; left: 0; width: calc(100vw - 50px); }
 }
 
 #blazor-error-ui {

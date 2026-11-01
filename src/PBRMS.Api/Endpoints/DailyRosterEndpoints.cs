@@ -43,8 +43,11 @@ public static class DailyRosterEndpoints
         app.MapDelete("/daily-roster/{date}/lines/{lineId:guid}", DiscardLine).RequireAuthorization(p => p.RequireRole(bookingOfficer));
     }
 
-    private static async Task<DailyRosterView> GetRoster(DateOnly date, DailyRosterComposer composer) =>
-        await composer.ComposeAsync(date);
+    private static async Task<DailyRosterView> GetRoster(DateOnly date, ClaimsPrincipal principal, DailyRosterComposer composer)
+    {
+        var roster = await composer.ComposeAsync(date);
+        return principal.IsInRole(nameof(Role.BookingOfficer)) ? roster : roster.ForReaders();
+    }
 
     private static async Task<IResult> GetPdf(DateOnly date, DailyRosterComposer composer)
     {
@@ -66,18 +69,10 @@ public static class DailyRosterEndpoints
     /// <summary>Saves a row. Saving the same production or row again replaces what was saved.</summary>
     private static async Task<IResult> SaveLine(DateOnly date, DailyLineForm form, ClaimsPrincipal principal, PbrmsDbContext db, DailyRosterComposer composer)
     {
-        if (string.IsNullOrWhiteSpace(form.Area) || form.Area.Trim().Length > 40)
-            return Problems.Invalid("area", "Name the area in up to 40 characters, e.g. \"Studio 1\".");
-        if (string.IsNullOrWhiteSpace(form.Title) || form.Title.Trim().Length > 200)
-            return Problems.Invalid("title", "Give the row a title of up to 200 characters.");
-        if (form.Detail?.Trim().Length > 300)
-            return Problems.Invalid("detail", "Keep the detail to 300 characters.");
-        if (form.StartsAt >= form.EndsAt)
-            return Problems.Invalid("endsAt", "The end must be after the start.");
-        if ((form.Crew ?? []).Any(c => string.IsNullOrWhiteSpace(c.Name) || c.Name.Trim().Length > 170 || string.IsNullOrWhiteSpace(c.Division) || c.Division.Trim().Length > 80))
-            return Problems.Invalid("crew", "Each crew member needs a name and a trade.");
-        if (form.BookingId is Guid bookingId && !await db.Bookings.AnyAsync(b => b.Id == bookingId))
-            return Problems.Invalid("bookingId", "That booking doesn't exist.");
+        if (ProblemWith(form) is { } problem)
+            return problem;
+        if (form.BookingId is Guid bookingId && !await composer.IsOnTheSheetAsync(bookingId, date))
+            return Problems.Invalid("bookingId", "That production isn't on this day's sheet any more.");
 
         var roster = await FindOrStartAsync(date, principal, db);
 
@@ -103,6 +98,25 @@ public static class DailyRosterEndpoints
         line.Crew.AddRange((form.Crew ?? []).Select(c => new DailyRosterCrew { Division = c.Division.Trim(), Name = c.Name.Trim() }));
 
         return await SaveAndShowAsync(date, db, composer);
+    }
+
+    /// <summary>What's wrong with a row, in words, or null if nothing is.</summary>
+    private static IResult? ProblemWith(DailyLineForm form)
+    {
+        if (string.IsNullOrWhiteSpace(form.Area) || form.Area.Trim().Length > 40)
+            return Problems.Invalid("area", "Name the area in up to 40 characters, e.g. \"Studio 1\".");
+        if (string.IsNullOrWhiteSpace(form.Title) || form.Title.Trim().Length > 200)
+            return Problems.Invalid("title", "Give the row a title of up to 200 characters.");
+        if (form.Detail?.Trim().Length > 300)
+            return Problems.Invalid("detail", "Keep the detail to 300 characters.");
+        if (form.StartsAt is null != form.EndsAt is null)
+            return Problems.Invalid("endsAt", "Give both times, or neither.");
+        if (form.StartsAt >= form.EndsAt)
+            return Problems.Invalid("endsAt", "The end must be after the start.");
+        if ((form.Crew ?? []).Any(c => string.IsNullOrWhiteSpace(c.Name) || c.Name.Trim().Length > 170 || string.IsNullOrWhiteSpace(c.Division) || c.Division.Trim().Length > 80))
+            return Problems.Invalid("crew", "Each crew member needs a name and a trade.");
+
+        return null;
     }
 
     /// <summary>Discards a saved row: an edited production goes back to what was generated, and an added row goes away.</summary>
