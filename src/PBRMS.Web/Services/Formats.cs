@@ -57,6 +57,14 @@ public static class Formats
         _ => role.ToString()!
     };
 
+    /// <summary>What sort of unit something is, in words.</summary>
+    public static string UnitKind(OrgUnitKind kind) => kind switch
+    {
+        OrgUnitKind.ContentDepartment => "Department",
+        OrgUnitKind.SubDepartment => "Part of a department",
+        _ => "TV Ops division"
+    };
+
     /// <summary>Why work is on the off-roster report, in words.</summary>
     public static string OffRosterKind(ClashKind kind) => kind switch
     {

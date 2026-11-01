@@ -1,0 +1,171 @@
+@* The form for one person: adding them, changing them, or marking that they've left.
+   If they're still on productions, the API lists those and nothing is saved until Admin says go ahead. *@
+
+<div class="line-editor">
+    <div class="form">
+        <label>First name <input @bind="firstName" maxlength="80" /></label>
+        <label>Surname <input @bind="surname" maxlength="80" /></label>
+        <label>NBC email <input type="email" @bind="email" maxlength="160" /></label>
+        <label>Phone <input @bind="phone" maxlength="20" /></label>
+        <label>
+            Employment
+            <select @bind="employment">
+                @foreach (var type in Enum.GetValues<EmploymentType>())
+                {
+                    <option value="@type">@type</option>
+                }
+            </select>
+        </label>
+        <label class="tick"><input type="checkbox" @bind="smsOnly" /> No smartphone: send notifications by SMS</label>
+    </div>
+
+    <h3>Roles</h3>
+    @foreach (var row in roles)
+    {
+        var scope = RoleRules.ScopeOf(row.Role);
+
+        <div class="slot">
+            <select value="@row.Role" @onchange="change => ChangeRole(row, change)" aria-label="Role">
+                @foreach (var role in Enum.GetValues<Role>())
+                {
+                    <option value="@role">@Formats.RoleName(role)</option>
+                }
+            </select>
+
+            @if (scope == RoleScope.WholeOfNbc)
+            {
+                <span class="muted">All of NBC</span>
+            }
+            else
+            {
+                <select @bind="row.UnitId" aria-label="Where">
+                    @if (scope == RoleScope.DepartmentOrWholeOfNbc)
+                    {
+                        <option value="">All of NBC</option>
+                    }
+                    @foreach (var unit in UnitsFor(row.Role))
+                    {
+                        <option value="@unit.Id">@unit.Name</option>
+                    }
+                </select>
+            }
+
+            @if (row.Role == Role.Operator)
+            {
+                <label class="inline"><input type="checkbox" @bind="row.StudioBound" /> Can't go on trips</label>
+            }
+
+            <button class="quiet" @onclick="() => roles.Remove(row)">Remove</button>
+        </div>
+    }
+    <button class="quiet" @onclick="AddRole">Add a role</button>
+
+    @if (Error is not null)
+    {
+        <p class="error">@Error</p>
+    }
+
+    @if (Warnings.Count > 0)
+    {
+        <ul>
+            @foreach (var warning in Warnings)
+            {
+                <li>#@warning.ProductionNo @warning.Title, @Formats.When(warning.StartsAt)</li>
+            }
+        </ul>
+    }
+
+    <div class="actions">
+        @if (Warnings.Count > 0 && warned is not null)
+        {
+            @* One decision at a time: go ahead with what was warned about, or stop. *@
+            <button class="danger" @onclick="() => Save.InvokeAsync(warned with { AcknowledgeWarnings = true })">Go ahead</button>
+        }
+        else
+        {
+            <button @onclick="() => SendAsync(Person?.IsActive ?? true)">@(Person is null ? "Add person" : "Save changes")</button>
+            @if (Person is { IsActive: true })
+            {
+                <button class="danger" @onclick="() => SendAsync(false)">Has left NBC</button>
+            }
+            else if (Person is not null)
+            {
+                <button class="quiet" @onclick="() => SendAsync(true)">Bring back</button>
+            }
+        }
+        <button class="quiet" @onclick="Cancel">Cancel</button>
+    </div>
+</div>
+
+@code {
+    /// <summary>The person being changed, or null when adding someone.</summary>
+    [Parameter] public PersonRow? Person { get; set; }
+
+    [Parameter] public List<OrgUnitRow> Units { get; set; } = [];
+
+    /// <summary>Why the API refused the last save.</summary>
+    [Parameter] public string? Error { get; set; }
+
+    /// <summary>The productions this person would drop out of.</summary>
+    [Parameter] public List<Clash> Warnings { get; set; } = [];
+
+    [Parameter] public EventCallback<PersonForm> Save { get; set; }
+
+    [Parameter] public EventCallback Cancel { get; set; }
+
+    private string firstName = "", surname = "", email = "";
+    private string? phone;
+    private EmploymentType employment;
+    private bool smsOnly;
+    private List<RoleRow> roles = [];
+
+    // What was last sent, so "Go ahead" sends exactly what the warnings were about.
+    private PersonForm? warned;
+
+    /// <summary>A role on the form, which changes one field at a time, unlike the API's record.</summary>
+    private sealed class RoleRow
+    {
+        public Role Role { get; set; }
+        public Guid? UnitId { get; set; }
+        public bool StudioBound { get; set; }
+    }
+
+    protected override void OnInitialized()
+    {
+        firstName = Person?.FirstName ?? "";
+        surname = Person?.Surname ?? "";
+        email = Person?.WorkEmail ?? "";
+        phone = Person?.Phone;
+        employment = Person?.EmploymentType ?? EmploymentType.Permanent;
+        smsOnly = Person?.SmsOnly ?? false;
+        roles = (Person?.Roles ?? []).Select(r => new RoleRow { Role = r.Role, UnitId = r.OrgUnitId, StudioBound = r.StudioBound }).ToList();
+    }
+
+    private IEnumerable<OrgUnitRow> UnitsFor(Role role) => Units.Where(u => RoleRules.Fits(role, u.Kind));
+
+    private void AddRole()
+    {
+        var row = new RoleRow { Role = Role.Operator };
+        row.UnitId = UnitsFor(row.Role).FirstOrDefault()?.Id;
+        roles.Add(row);
+    }
+
+    /// <summary>A different role can go in different places, so the unit starts again.</summary>
+    private void ChangeRole(RoleRow row, ChangeEventArgs change)
+    {
+        row.Role = Enum.Parse<Role>(change.Value!.ToString()!);
+        row.StudioBound = false;
+        row.UnitId = RoleRules.ScopeOf(row.Role) is RoleScope.Division or RoleScope.Department
+            ? UnitsFor(row.Role).FirstOrDefault()?.Id
+            : null;
+    }
+
+    private async Task SendAsync(bool active)
+    {
+        warned = new PersonForm(
+            firstName, surname, email, phone, employment, smsOnly, active,
+            roles.Select(r => new RoleForm(r.Role, r.UnitId, r.StudioBound)).ToList());
+
+        await Save.InvokeAsync(warned);
+    }
+}

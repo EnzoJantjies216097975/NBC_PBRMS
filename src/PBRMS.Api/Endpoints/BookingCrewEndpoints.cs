@@ -134,6 +134,9 @@ public static class BookingCrewEndpoints
             if (change.OperatorId is Guid operatorId && !await IsOperatorInDivisionAsync(db, operatorId, slot.DivisionId))
                 return (changes, Problems.Invalid("operatorId", "That person isn't an active operator in this position's division."));
 
+            if (booking.IsTrip && change.OperatorId is Guid traveller && await IsKeptOffTripsAsync(db, traveller, slot.DivisionId))
+                return (changes, Problems.Invalid("operatorId", "That operator can't be put on a trip (BR-09)."));
+
             // A confirmed crew list stays full: replace the operator rather than removing them.
             if (booking.Status == BookingStatus.Confirmed && change.OperatorId is null)
                 return (changes, Problems.Invalid("operatorId", "A confirmed position can't be left empty. Name who replaces this operator."));
@@ -256,4 +259,8 @@ public static class BookingCrewEndpoints
     private static Task<bool> IsOperatorInDivisionAsync(PbrmsDbContext db, Guid userId, Guid divisionId) =>
         db.RoleAssignments.AnyAsync(r =>
             r.UserId == userId && r.Role == Role.Operator && r.OrgUnitId == divisionId && r.User.IsActive);
+
+    private static Task<bool> IsKeptOffTripsAsync(PbrmsDbContext db, Guid userId, Guid divisionId) =>
+        db.RoleAssignments.AnyAsync(r =>
+            r.UserId == userId && r.Role == Role.Operator && r.OrgUnitId == divisionId && r.StudioBound);
 }

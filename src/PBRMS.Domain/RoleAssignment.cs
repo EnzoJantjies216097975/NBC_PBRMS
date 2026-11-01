@@ -22,7 +22,7 @@ public class RoleAssignment
     public OrgUnit? OrgUnit { get; set; }
 
     /// <summary>
-    /// The operator may only work in the studio and is never put on trips (BR-09).
+    /// The operator is kept to the building and can't be put on a trip (BR-09).
     /// </summary>
     public bool StudioBound { get; set; }
 }

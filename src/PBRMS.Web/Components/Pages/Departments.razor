@@ -1,0 +1,134 @@
+@* NBC's departments and TV Ops divisions, for Admin. A unit can be renamed at any time, but can
+   only be removed if it was added by mistake: once used, the history points at it. *@
+@page "/departments"
+@inject ApiClient Api
+
+<PageTitle>Departments</PageTitle>
+
+<h1>Departments and divisions</h1>
+
+@if (!Api.Has(Role.Admin))
+{
+    <p>Only Admin can see this page.</p>
+    return;
+}
+
+@if (error is not null)
+{
+    <p class="error">@error</p>
+}
+
+<table>
+    <thead>
+        <tr><th>Name</th><th>Kind</th><th>Inside</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var unit in units.OrderBy(u => u.Kind == OrgUnitKind.TvOpsDivision).ThenBy(u => u.Name))
+        {
+            <tr>
+                <td>@unit.Name</td>
+                <td>@Formats.UnitKind(unit.Kind)</td>
+                <td>@units.FirstOrDefault(u => u.Id == unit.ParentId)?.Name</td>
+                <td class="row-actions">
+                    <button class="quiet" @onclick="() => Edit(unit)" aria-label="Change @unit.Name">Change</button>
+                    <button class="quiet" @onclick="() => RemoveAsync(unit)" aria-label="Remove @unit.Name">Remove</button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h2>@(editing is null ? "Add a unit" : $"Change {editing.Name}")</h2>
+<div class="form">
+    <label>Name <input @bind="name" maxlength="80" /></label>
+    <label>
+        Kind
+        <select @bind="kind" disabled="@(editing is not null)">
+            @foreach (var option in Enum.GetValues<OrgUnitKind>())
+            {
+                <option value="@option">@Formats.UnitKind(option)</option>
+            }
+        </select>
+    </label>
+    @if (kind == OrgUnitKind.SubDepartment)
+    {
+        <label>
+            Part of
+            <select @bind="parentId">
+                <option value="">Choose a department</option>
+                @foreach (var department in units.Where(u => u.Kind == OrgUnitKind.ContentDepartment))
+                {
+                    <option value="@department.Id">@department.Name</option>
+                }
+            </select>
+        </label>
+    }
+</div>
+<p class="muted">A new TV Ops division starts with no shift codes: its supervisor adds them under Shift codes.</p>
+<div class="actions">
+    <button @onclick="SaveAsync">@(editing is null ? "Add unit" : "Save changes")</button>
+    @if (editing is not null)
+    {
+        <button class="quiet" @onclick="ClearForm">Cancel</button>
+    }
+</div>
+
+@code {
+    private List<OrgUnitRow> units = [];
+    private OrgUnitRow? editing;
+    private string name = "";
+    private OrgUnitKind kind;
+    private Guid? parentId;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Api.Has(Role.Admin))
+            await LoadAsync();
+    }
+
+    private async Task LoadAsync() => units = (await Api.OrgUnitsAsync()).Value ?? units;
+
+    private void Edit(OrgUnitRow unit)
+    {
+        editing = unit;
+        error = null;
+        (name, kind, parentId) = (unit.Name, unit.Kind, unit.ParentId);
+    }
+
+    private void ClearForm()
+    {
+        editing = null;
+        error = null;
+        (name, kind, parentId) = ("", default, null);
+    }
+
+    private async Task SaveAsync()
+    {
+        // Only a part of a department sits inside anything.
+        var form = new OrgUnitForm(name, kind, kind == OrgUnitKind.SubDepartment ? parentId : null);
+        var result = editing is null ? await Api.AddUnitAsync(form) : await Api.ChangeUnitAsync(editing.Id, form);
+
+        if (!result.Ok)
+        {
+            error = result.Error;
+            return;
+        }
+
+        ClearForm();
+        await LoadAsync();
+    }
+
+    private async Task RemoveAsync(OrgUnitRow unit)
+    {
+        var result = await Api.RemoveUnitAsync(unit.Id);
+        error = result.Error;
+
+        if (result.Ok)
+        {
+            if (editing?.Id == unit.Id)
+                ClearForm();
+            await LoadAsync();
+        }
+    }
+}

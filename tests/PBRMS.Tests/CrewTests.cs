@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
 using PBRMS.Api.Endpoints;
 using PBRMS.Domain;
 using static PBRMS.Tests.TestSteps;
@@ -18,6 +19,23 @@ namespace PBRMS.Tests;
 [Collection("API")]
 public class CrewTests(TestApi api)
 {
+    [Fact]
+    public async Task An_operator_kept_off_trips_cant_be_put_on_one_but_can_work_a_studio()
+    {
+        var op = await api.NewOperatorAsync("Camera");
+        await api.WithDatabaseAsync(db => db.RoleAssignments
+            .Where(r => r.UserId == op)
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.StudioBound, true)));
+        var trip = await api.AtCrewStageAsync(NewDay(), Venue.Location, isTrip: true, "Camera");
+        var studio = await api.AtCrewStageAsync(NewDay(), Venue.Studio1, "Camera");
+
+        var onTrip = await api.AssignAsync(trip, "Camera", op);
+        var inStudio = await api.AssignAsync(studio, "Camera", op);
+
+        Assert.Equal(HttpStatusCode.BadRequest, onTrip.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, inStudio.StatusCode);
+    }
+
     [Fact]
     public async Task A_booking_goes_all_the_way_to_confirmed_and_the_producer_gets_the_crew_phone_numbers()
     {

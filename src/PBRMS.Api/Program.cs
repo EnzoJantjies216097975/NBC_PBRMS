@@ -67,6 +67,7 @@ app.UseAuthorization();
 app.MapHealthEndpoints();
 app.MapMeEndpoints();
 app.MapOrgUnitEndpoints();
+app.MapUserEndpoints();
 app.MapBookingFormEndpoints();
 app.MapBookingQueryEndpoints();
 app.MapBookingTransitionEndpoints();

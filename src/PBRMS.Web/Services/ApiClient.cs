@@ -205,6 +205,35 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
     public Task<ApiResult<List<ConfirmationRow>>> ConfirmationsReportAsync(DateOnly from, DateOnly to) =>
         GetAsync<List<ConfirmationRow>>($"reports/confirmations?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
+    // ---- Admin: people, departments and divisions ----
+
+    public Task<ApiResult<List<PersonRow>>> PeopleAsync() => GetAsync<List<PersonRow>>("users");
+
+    public Task<ApiResult<PersonRow>> AddPersonAsync(PersonForm form) => PostAsync<PersonRow>("users", form);
+
+    public Task<ApiResult<PersonRow>> ChangePersonAsync(Guid id, PersonForm form) =>
+        SendAsync<PersonRow>(HttpMethod.Put, $"users/{id}", form);
+
+    public Task<ApiResult<OrgUnitRow>> AddUnitAsync(OrgUnitForm form) => PostAsync<OrgUnitRow>("org-units", form);
+
+    public Task<ApiResult<OrgUnitRow>> ChangeUnitAsync(Guid id, OrgUnitForm form) =>
+        SendAsync<OrgUnitRow>(HttpMethod.Put, $"org-units/{id}", form);
+
+    /// <summary>The API answers with nothing when it worked, so this reads no data back.</summary>
+    public async Task<ApiResult> RemoveUnitAsync(Guid id)
+    {
+        try
+        {
+            using var request = Request(HttpMethod.Delete, $"org-units/{id}");
+            using var response = await http.SendAsync(request);
+            return response.IsSuccessStatusCode ? ApiResult.Success : await ProblemAsync(response);
+        }
+        catch (HttpRequestException)
+        {
+            return Unreachable;
+        }
+    }
+
     // ---- Notifications ----
 
     public Task<ApiResult<List<NotificationRow>>> NotificationsAsync() => GetAsync<List<NotificationRow>>("notifications");

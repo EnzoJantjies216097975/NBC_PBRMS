@@ -42,6 +42,8 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `POST /auth/dev-login` | `{ "email": "producer@pbrms.test" }` returns a token (Development only, no password) |
 | `GET /me` | Your profile and roles |
 | `GET /org-units` | Departments and TV Ops divisions, for the booking form's pickers |
+| `POST /org-units`, `PUT .../{id}`, `DELETE .../{id}` | Add, rename or remove a unit (Admin). Only a unit that has never been used can be removed. |
+| `GET /users`, `POST /users`, `PUT /users/{id}` | People and their roles (Admin). Someone who leaves gets `isActive: false`, and nobody is deleted. |
 | `POST /bookings` | Create a draft booking |
 | `PUT /bookings/{id}` | Edit your draft (also after it was sent back) |
 | `GET /bookings/{id}` | One booking with its crew positions and history |
@@ -104,7 +106,7 @@ Then open <http://localhost:5103> and pick who to be. Each browser tab signs in 
 can open two tabs as different people and watch changes arrive live.
 
 So far it has: My work, the booking form, booking pages (approve, crew, confirm), the daily roster
-with row editing and its PDF, the monthly roster grid, shift codes, the APP room, reports, and notifications. On NBC's servers the sign-in page becomes the
+with row editing and its PDF, the monthly roster grid, shift codes, the APP room, reports, notifications, and People and Departments for Admin. On NBC's servers the sign-in page becomes the
 Microsoft sign-in, and `Api:BaseUrl` must point at the API.
 
 ## How a booking moves

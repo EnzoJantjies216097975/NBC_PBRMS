@@ -37,6 +37,11 @@ else
             {
                 <NavLink href="reports">Reports</NavLink>
             }
+            @if (Api.Has(Role.Admin))
+            {
+                <NavLink href="people">People</NavLink>
+                <NavLink href="departments">Departments</NavLink>
+            }
             <NavLink href="notifications">Notifications@(unread > 0 ? $" ({unread})" : "")</NavLink>
         </nav>
         <span class="who">@Api.Me.Name</span>

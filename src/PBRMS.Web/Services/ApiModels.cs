@@ -28,7 +28,25 @@ public record MeResponse(Guid Id, string FirstName, string Surname, string WorkE
 
 public record EarliestDate(DateOnly Date);
 
-public record OrgUnitRow(Guid Id, string Name, OrgUnitKind Kind);
+public record OrgUnitRow(Guid Id, string Name, OrgUnitKind Kind, Guid? ParentId = null);
+
+public record OrgUnitForm(string Name, OrgUnitKind Kind, Guid? ParentId);
+
+public record PersonRoleRow(Role Role, Guid? OrgUnitId, string? Unit, bool StudioBound);
+
+public record PersonRow(
+    Guid Id, string FirstName, string Surname, string WorkEmail, string? Phone,
+    EmploymentType EmploymentType, bool SmsOnly, bool IsActive, List<PersonRoleRow> Roles)
+{
+    public string Name => $"{FirstName} {Surname}";
+}
+
+public record RoleForm(Role Role, Guid? OrgUnitId, bool StudioBound);
+
+/// <summary>A person as Admin wants them. See the API's form for what each part does.</summary>
+public record PersonForm(
+    string FirstName, string Surname, string WorkEmail, string? Phone, EmploymentType EmploymentType,
+    bool SmsOnly, bool IsActive, List<RoleForm> Roles, bool AcknowledgeWarnings = false);
 
 public record OperatorRow(Guid Id, string FirstName, string Surname)
 {

@@ -1,0 +1,149 @@
+@* The people who use PBRMS and their roles, for Admin. Nobody is deleted: someone who leaves is
+   marked as left, keeps their history and can be brought back. *@
+@page "/people"
+@inject ApiClient Api
+
+<PageTitle>People</PageTitle>
+
+<h1>People</h1>
+
+@if (!Api.Has(Role.Admin))
+{
+    <p>Only Admin can see this page.</p>
+    return;
+}
+
+<div class="actions">
+    <input class="wide" @bind="search" @bind:event="oninput" placeholder="Find someone by name, email or role" aria-label="Find someone" />
+    <label class="inline"><input type="checkbox" @bind="showLeft" /> Show people who have left</label>
+    <button @onclick="StartAdding">Add a person</button>
+</div>
+
+@if (error is not null)
+{
+    <p class="error">@error</p>
+}
+
+@if (adding)
+{
+    <h2>Add a person</h2>
+    <PersonEditor Units="units" Error="@editError" Warnings="warnings" Save="SaveAsync" Cancel="CloseEditor" />
+}
+
+<p class="muted">@Shown.Count() of @people.Count</p>
+
+<table>
+    <thead>
+        <tr><th>Name</th><th>NBC email</th><th>Phone</th><th>Roles</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var person in Shown)
+        {
+            <tr class="@(person.IsActive ? "" : "retired")">
+                <td>
+                    @person.Name
+                    @if (!person.IsActive)
+                    {
+                        <span class="badge">Left</span>
+                    }
+                </td>
+                <td>@person.WorkEmail</td>
+                <td>@person.Phone</td>
+                <td>
+                    @foreach (var role in person.Roles)
+                    {
+                        <div>@RoleText(role)</div>
+                    }
+                </td>
+                <td class="row-actions">
+                    <button class="quiet" @onclick="() => StartEditing(person.Id)" aria-label="Change @person.Name">Change</button>
+                </td>
+            </tr>
+
+            @if (editing == person.Id)
+            {
+                <tr>
+                    <td colspan="5">
+                        <PersonEditor @key="person.Id" Person="person" Units="units" Error="@editError" Warnings="warnings" Save="SaveAsync" Cancel="CloseEditor" />
+                    </td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+
+@code {
+    private List<PersonRow> people = [];
+    private List<OrgUnitRow> units = [];
+    private string search = "";
+    private bool showLeft, adding;
+    private Guid? editing;
+    private string? error, editError;
+    private List<Clash> warnings = [];
+
+    private IEnumerable<PersonRow> Shown => people.Where(p => (showLeft || p.IsActive || p.Id == editing) && Matches(p));
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Api.Has(Role.Admin))
+            return;
+
+        units = (await Api.OrgUnitsAsync()).Value ?? [];
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await Api.PeopleAsync();
+        people = result.Value ?? people;
+        error = result.Error;
+    }
+
+    private bool Matches(PersonRow person)
+    {
+        var words = $"{person.Name} {person.WorkEmail} {string.Join(" ", person.Roles.Select(RoleText))}";
+        return words.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string RoleText(PersonRoleRow role)
+    {
+        var name = Formats.RoleName(role.Role);
+        var where = role.Unit is null ? name : $"{name}, {role.Unit}";
+        return role.StudioBound ? $"{where} (no trips)" : where;
+    }
+
+    private void StartAdding()
+    {
+        CloseEditor();
+        adding = true;
+    }
+
+    private void StartEditing(Guid id)
+    {
+        CloseEditor();
+        editing = id;
+    }
+
+    private void CloseEditor()
+    {
+        adding = false;
+        editing = null;
+        editError = null;
+        warnings = [];
+    }
+
+    private async Task SaveAsync(PersonForm form)
+    {
+        var result = editing is { } id ? await Api.ChangePersonAsync(id, form) : await Api.AddPersonAsync(form);
+
+        if (!result.Ok)
+        {
+            editError = result.Error;
+            warnings = result.Clashes;
+            return;
+        }
+
+        CloseEditor();
+        await LoadAsync();
+    }
+}

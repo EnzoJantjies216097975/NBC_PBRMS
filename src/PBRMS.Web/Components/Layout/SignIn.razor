@@ -10,6 +10,12 @@
         <button class="person" @onclick="() => SignInAsync(email)">@label</button>
     }
 
+    @* For someone just added under People. *@
+    <div class="actions">
+        <input class="wide" type="email" @bind="otherEmail" placeholder="Or type anyone's email" aria-label="Email" />
+        <button class="quiet" @onclick="() => SignInAsync(otherEmail)">Sign in</button>
+    </div>
+
     @if (error is not null)
     {
         <p class="error">@error</p>
@@ -20,6 +26,7 @@
     [Parameter] public EventCallback OnSignedIn { get; set; }
 
     private string? error;
+    private string otherEmail = "";
 
     private static readonly (string Label, string Email)[] People =
     [
