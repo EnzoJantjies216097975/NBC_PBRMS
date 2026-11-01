@@ -59,6 +59,20 @@ public class LiveUpdateTests(TestApi api)
     }
 
     [Fact]
+    public async Task Everyone_hears_that_a_roster_changed_so_their_screen_can_refresh()
+    {
+        await using var bookingOfficer = await ConnectAsync("booking@pbrms.test");
+        var changed = Listen<LiveRosterChange>(bookingOfficer, "rosterChanged");
+        var units = await api.UnitsAsync();
+        var supervisor = await api.SignedInClientAsync("supervisor@pbrms.test");
+
+        var saved = await supervisor.PutAsJsonAsync($"/rosters/{units["Camera"]}/2031-12", new { entries = Array.Empty<object>() }, Json);
+
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        Assert.Equal(units["Camera"], (await changed.WaitAsync(Patience)).DivisionId);
+    }
+
+    [Fact]
     public async Task A_change_that_is_refused_sends_nothing()
     {
         await using var ep = await ConnectAsync("ep@pbrms.test");

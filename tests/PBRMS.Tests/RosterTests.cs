@@ -526,7 +526,79 @@ public class RosterTests(TestApi api)
         Assert.Contains(await api.NotificationsAsync(OperatorEmail(op)), n => n.Text.Contains("roster has been published"));
     }
 
+    [Fact]
+    public async Task Anyone_can_read_the_published_roster_but_a_new_draft_stays_with_its_supervisor()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 1), "A1"));
+        await PublishOkAsync(month);
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 1), "O"));
+
+        var ownSupervisor = await ReadRosterAsync(Supervisor, month);
+        Assert.Equal((2, RosterStatus.Draft, "O"), (ownSupervisor.Version, ownSupervisor.Status, ownSupervisor.Entries[0].Code));
+
+        var bookingOfficer = await ReadRosterAsync("booking@pbrms.test", month);
+        Assert.Equal(2, bookingOfficer.Version);
+
+        foreach (var reader in new[] { OperatorEmail(op), "supervisor.sound@pbrms.test" })
+        {
+            var published = await ReadRosterAsync(reader, month);
+            Assert.Equal((1, RosterStatus.Published, "A1"), (published.Version, published.Status, published.Entries[0].Code));
+        }
+    }
+
+    [Fact]
+    public async Task A_first_draft_looks_like_nothing_yet_to_everyone_else()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        await SaveCellsOkAsync(month, new RosterCell(op, DayOf(month, 1), "A1"));
+
+        var seen = await ReadRosterAsync(OperatorEmail(op), month);
+
+        Assert.Equal(0, seen.Version);
+        Assert.Empty(seen.Entries);
+    }
+
+    [Fact]
+    public async Task Only_the_divisions_supervisor_and_the_booking_officer_see_a_rosters_clashes()
+    {
+        var month = NewMonth();
+        var op = await api.NewOperatorAsync("Camera");
+        var units = await api.UnitsAsync();
+        var url = $"{RosterUrl(units["Camera"], month)}/clashes";
+
+        var other = await api.SignedInClientAsync("supervisor.sound@pbrms.test");
+        var bookingOfficer = await api.SignedInClientAsync("booking@pbrms.test");
+        var operatorClient = await api.SignedInClientAsync(OperatorEmail(op));
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await operatorClient.GetAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await bookingOfficer.GetAsync(url)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Everyone_can_see_who_is_in_a_division_so_the_roster_has_its_names()
+    {
+        var op = await api.NewOperatorAsync("Camera");
+        var units = await api.UnitsAsync();
+        var client = await api.SignedInClientAsync(OperatorEmail(op));
+
+        var response = await client.GetAsync($"/org-units/{units["Camera"]}/operators");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     // ---- Helpers ----
+
+    /// <summary>The Camera roster as this person sees it.</summary>
+    private async Task<RosterResponse> ReadRosterAsync(string email, DateTimeOffset month)
+    {
+        var units = await api.UnitsAsync();
+        var client = await api.SignedInClientAsync(email);
+        return (await client.GetFromJsonAsync<RosterResponse>(RosterUrl(units["Camera"], month), Json))!;
+    }
 
     private static int monthCounter;
 

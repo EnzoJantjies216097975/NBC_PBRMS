@@ -5,7 +5,7 @@ namespace PBRMS.Web.Services;
 
 /// <summary>
 /// Listens to the API's live connection, so screens refresh themselves when a booking
-/// comes in or the APP room changes. Pages subscribe to <see cref="Changed"/> and reload
+/// comes in, a roster is saved or the APP room changes. Pages subscribe to <see cref="Changed"/> and reload
 /// their own data, so each person still sees only what the API allows them to.
 /// </summary>
 public sealed class LiveUpdates(IConfiguration config) : IAsyncDisposable
@@ -25,7 +25,7 @@ public sealed class LiveUpdates(IConfiguration config) : IAsyncDisposable
             .WithAutomaticReconnect()
             .Build();
 
-        foreach (var message in new[] { "notification", "bookingChanged" })
+        foreach (var message in new[] { "notification", "bookingChanged", "rosterChanged" })
             connection.On<JsonElement>(message, _ => TellPagesAsync());
         connection.On("appRoomChanged", TellPagesAsync);
 

@@ -9,9 +9,10 @@ namespace PBRMS.Api.Endpoints;
 
 /// <summary>
 /// The monthly roster grid (Backend Schema Document, /rosters/{division}/{month}, where
-/// month looks like "2026-11"). Supervisors build and publish their own division's
-/// roster; the Booking Officer can read them all. See <see cref="MonthlyRoster"/> for
-/// how versions work.
+/// month looks like "2026-11"). Supervisors build and publish their own division's roster.
+/// Everyone can read what's published: operators are told when it is, so they must be able
+/// to look. Only the division's supervisor and the Booking Officer see a draft and its
+/// clashes. See <see cref="MonthlyRoster"/> for how versions work.
 /// </summary>
 public static class RosterEndpoints
 {
@@ -28,29 +29,32 @@ public static class RosterEndpoints
 
     public static void MapRosterEndpoints(this WebApplication app)
     {
-        string[] readers = [nameof(Role.Supervisor), nameof(Role.BookingOfficer)];
-
-        app.MapGet("/rosters/{divisionId:guid}/{month}", GetRoster).RequireAuthorization(p => p.RequireRole(readers));
-        app.MapGet("/rosters/{divisionId:guid}/{month}/clashes", GetClashes).RequireAuthorization(p => p.RequireRole(readers));
+        app.MapGet("/rosters/{divisionId:guid}/{month}", GetRoster).RequireAuthorization();
+        app.MapGet("/rosters/{divisionId:guid}/{month}/clashes", GetClashes).RequireAuthorization();
         app.MapPut("/rosters/{divisionId:guid}/{month}", EditRoster).RequireAuthorization(p => p.RequireRole(nameof(Role.Supervisor)));
         app.MapPost("/rosters/{divisionId:guid}/{month}/publish", Publish).RequireAuthorization(p => p.RequireRole(nameof(Role.Supervisor)));
     }
 
-    /// <summary>The newest version: the draft being worked on, or else what's published.</summary>
-    private static async Task<IResult> GetRoster(Guid divisionId, string month, PbrmsDbContext db)
+    /// <summary>The newest version for whoever may see drafts. Everyone else gets what's in force.</summary>
+    private static async Task<IResult> GetRoster(Guid divisionId, string month, ClaimsPrincipal principal, PbrmsDbContext db)
     {
         if (ParseMonth(month) is not DateOnly first)
             return BadMonth();
 
-        var roster = await LatestAsync(db, divisionId, first);
+        var roster = await MaySeeDraftsAsync(principal, db, divisionId)
+            ? await LatestAsync(db, divisionId, first)
+            : await PublishedAsync(db, divisionId, first);
+
         return Results.Ok(Respond(divisionId, first, roster));
     }
 
     /// <summary>A preview of what publishing would warn about.</summary>
-    private static async Task<IResult> GetClashes(Guid divisionId, string month, PbrmsDbContext db, ClashChecker clashChecker)
+    private static async Task<IResult> GetClashes(Guid divisionId, string month, ClaimsPrincipal principal, PbrmsDbContext db, ClashChecker clashChecker)
     {
         if (ParseMonth(month) is not DateOnly first)
             return BadMonth();
+        if (!await MaySeeDraftsAsync(principal, db, divisionId))
+            return Problems.Forbidden("Only this division's supervisor or the Booking Officer can see its clashes.");
 
         var roster = await LatestAsync(db, divisionId, first);
         return Results.Ok(roster is null ? [] : await clashChecker.ForRosterAsync(roster));
@@ -187,10 +191,24 @@ public static class RosterEndpoints
         return await (tracked ? rosters : rosters.AsNoTracking()).OrderByDescending(r => r.Version).FirstOrDefaultAsync();
     }
 
+    private static Task<MonthlyRoster?> PublishedAsync(PbrmsDbContext db, Guid divisionId, DateOnly month) =>
+        db.MonthlyRosters.AsNoTracking().Include(r => r.Entries)
+            .Where(r => r.DivisionId == divisionId && r.Month == month && r.Status == RosterStatus.Published)
+            .OrderByDescending(r => r.Version)
+            .FirstOrDefaultAsync();
+
     private static async Task<bool> IsSupervisorOfAsync(ClaimsPrincipal principal, PbrmsDbContext db, Guid divisionId)
     {
         var caller = await Caller.LoadAsync(principal, db);
         return BookingWorkflow.HoldsRoleIn(caller.Roles, Role.Supervisor, new HashSet<Guid> { divisionId });
+    }
+
+    private static async Task<bool> MaySeeDraftsAsync(ClaimsPrincipal principal, PbrmsDbContext db, Guid divisionId)
+    {
+        var caller = await Caller.LoadAsync(principal, db);
+        var division = new HashSet<Guid> { divisionId };
+        return BookingWorkflow.HoldsRoleIn(caller.Roles, Role.Supervisor, division)
+               || BookingWorkflow.HoldsRoleIn(caller.Roles, Role.BookingOfficer, division);
     }
 
     /// <summary>"2026-11" as the first day of that month, or null if it isn't a month.</summary>

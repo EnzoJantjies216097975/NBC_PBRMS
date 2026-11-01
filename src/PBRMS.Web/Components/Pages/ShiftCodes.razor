@@ -1,0 +1,183 @@
+@* A division's legend of shift codes. Supervisors keep their own up to date, and invent new
+   codes when a production needs covering, so this must never need a developer. A code is
+   retired rather than deleted, because past rosters still use it. *@
+@page "/shift-codes"
+@inject ApiClient Api
+
+<PageTitle>Shift codes</PageTitle>
+
+<h1>Shift codes</h1>
+
+<div class="actions">
+    <select value="@division?.Id" @onchange="ChangeDivisionAsync" aria-label="Division">
+        @foreach (var unit in divisions)
+        {
+            <option value="@unit.Id">@unit.Name</option>
+        }
+    </select>
+</div>
+
+@if (error is not null)
+{
+    <p class="error">@error</p>
+}
+
+<table>
+    <thead>
+        <tr><th>Code</th><th>Means</th><th>Kind</th><th>Hours</th><th>Studio</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var shift in codes)
+        {
+            <tr class="@(shift.IsActive ? "" : "retired")">
+                <td class="code" style="@(shift.Colour is null ? "" : $"--code:{shift.Colour}")">@shift.Code</td>
+                <td>
+                    @shift.Label
+                    @if (!shift.IsActive)
+                    {
+                        <span class="badge">Retired</span>
+                    }
+                </td>
+                <td>@Formats.ShiftKindName(shift.Kind)</td>
+                <td>@Formats.ShiftHours(shift)</td>
+                <td>@(shift.Studio is { } studio ? Formats.Venue(studio) : "")</td>
+                <td class="row-actions">
+                    <button class="quiet" @onclick="() => Edit(shift)">Edit</button>
+                    <button class="quiet" @onclick="() => SetActiveAsync(shift, !shift.IsActive)">@(shift.IsActive ? "Retire" : "Bring back")</button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h2>@(editing is null ? "Add a code" : $"Change {editing.Code}")</h2>
+<div class="form">
+    <label>Code <input @bind="form.Code" maxlength="12" readonly="@(editing is not null)" /></label>
+    <label>Means <input @bind="form.Label" maxlength="80" /></label>
+    <label>
+        Kind
+        <select @bind="form.Kind">
+            @foreach (var kind in Enum.GetValues<ShiftKind>())
+            {
+                <option value="@kind">@Formats.ShiftKindName(kind)</option>
+            }
+        </select>
+    </label>
+    <label>
+        Ties them to
+        <select @bind="form.Studio">
+            <option value="">No studio</option>
+            @foreach (var studio in ClashRules.Studios)
+            {
+                <option value="@studio">@Formats.Venue(studio)</option>
+            }
+        </select>
+    </label>
+    <label>Starts <input type="time" @bind="form.Start" /></label>
+    <label>Ends <input type="time" @bind="form.End" /></label>
+    <label>Second shift starts <input type="time" @bind="form.SecondStart" /></label>
+    <label>Second shift ends <input type="time" @bind="form.SecondEnd" /></label>
+    <label>Colour on the grid <input @bind="form.Colour" maxlength="9" placeholder="#5FB87A" /></label>
+</div>
+<p class="muted">Leave the hours empty if it's whatever the booking says. An end before the start runs past midnight.</p>
+<div class="actions">
+    <button @onclick="SaveAsync">@(editing is null ? "Add code" : "Save changes")</button>
+    @if (editing is not null)
+    {
+        <button class="quiet" @onclick="ClearForm">Cancel</button>
+    }
+</div>
+
+@code {
+    private List<OrgUnitRow> divisions = [];
+    private OrgUnitRow? division;
+    private List<ShiftCode> codes = [];
+    private ShiftCode? editing;
+    private CodeForm form = new();
+    private string? error;
+
+    /// <summary>The form's fields, which change one at a time, unlike the API's record.</summary>
+    private sealed class CodeForm
+    {
+        public string Code { get; set; } = "";
+        public string Label { get; set; } = "";
+        public ShiftKind Kind { get; set; } = ShiftKind.Worked;
+        public Venue? Studio { get; set; }
+        public TimeOnly? Start { get; set; }
+        public TimeOnly? End { get; set; }
+        public TimeOnly? SecondStart { get; set; }
+        public TimeOnly? SecondEnd { get; set; }
+        public string? Colour { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var units = (await Api.OrgUnitsAsync()).Value ?? [];
+        var all = units.Where(u => u.Kind == OrgUnitKind.TvOpsDivision).ToList();
+
+        // Supervisors keep their own legend; an Admin can reach every one.
+        divisions = Api.Has(Role.Admin) ? all : all.Where(u => Api.Has(Role.Supervisor, u.Name)).ToList();
+        division = divisions.FirstOrDefault();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (division is not null)
+            codes = (await Api.ShiftCodesAsync(division.Id)).Value ?? [];
+    }
+
+    private async Task ChangeDivisionAsync(ChangeEventArgs change)
+    {
+        division = divisions.FirstOrDefault(u => u.Id.ToString() == change.Value?.ToString());
+        ClearForm();
+        await LoadAsync();
+    }
+
+    private void Edit(ShiftCode code)
+    {
+        editing = code;
+        error = null;
+        form = new CodeForm
+        {
+            Code = code.Code, Label = code.Label, Kind = code.Kind, Studio = code.Studio,
+            Start = code.Start, End = code.End, SecondStart = code.SecondStart, SecondEnd = code.SecondEnd,
+            Colour = code.Colour
+        };
+    }
+
+    private void ClearForm()
+    {
+        editing = null;
+        error = null;
+        form = new CodeForm();
+    }
+
+    private async Task SaveAsync()
+    {
+        var code = new ShiftCode(
+            editing?.Id ?? Guid.Empty, form.Code, form.Label, form.Kind,
+            form.Start, form.End, form.SecondStart, form.SecondEnd,
+            string.IsNullOrWhiteSpace(form.Colour) ? null : form.Colour, editing?.IsActive ?? true, form.Studio);
+
+        var result = editing is null
+            ? await Api.AddShiftCodeAsync(division!.Id, code)
+            : await Api.ChangeShiftCodeAsync(division!.Id, code);
+
+        if (!result.Ok)
+        {
+            error = result.Error;
+            return;
+        }
+
+        ClearForm();
+        await LoadAsync();
+    }
+
+    private async Task SetActiveAsync(ShiftCode code, bool active)
+    {
+        var result = await Api.ChangeShiftCodeAsync(division!.Id, code with { IsActive = active });
+        error = result.Error;
+        await LoadAsync();
+    }
+}

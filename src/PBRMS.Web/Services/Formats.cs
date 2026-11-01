@@ -25,6 +25,24 @@ public static class Formats
         _ => venue.ToString()
     };
 
+    /// <summary>A shift's hours, like 05h00–14h00 and 13h00–22h00, or nothing if it has none.</summary>
+    public static string ShiftHours(ShiftCode code)
+    {
+        static string Pair(TimeOnly? start, TimeOnly? end) =>
+            start is { } from && end is { } to ? $"{from:HH'h'mm}–{to:HH'h'mm}" : "";
+
+        return string.Join(" and ", new[] { Pair(code.Start, code.End), Pair(code.SecondStart, code.SecondEnd) }.Where(p => p.Length > 0));
+    }
+
+    /// <summary>What a kind of shift code means, in words.</summary>
+    public static string ShiftKindName(ShiftKind kind) => kind switch
+    {
+        ShiftKind.Off => "Day off, can be called in",
+        ShiftKind.Leave => "Leave, can't be booked",
+        ShiftKind.Away => "Out of town",
+        _ => "On duty"
+    };
+
     /// <summary>A time today, or with its date if it isn't today.</summary>
     public static string Until(DateTimeOffset moment) =>
         NbcTime.DateOf(moment) == NbcTime.DateOf(DateTimeOffset.UtcNow) ? Clock(moment) : When(moment);

@@ -100,6 +100,29 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
     public Task<ApiResult<BookingResponse>> SaveCrewAsync(Guid id, CrewRequest request) =>
         SendAsync<BookingResponse>(HttpMethod.Put, $"bookings/{id}/crew", request);
 
+    // ---- Monthly roster and shift codes ----
+
+    public Task<ApiResult<RosterView>> RosterAsync(Guid division, string month) =>
+        GetAsync<RosterView>($"rosters/{division}/{month}");
+
+    public Task<ApiResult<List<Clash>>> RosterClashesAsync(Guid division, string month) =>
+        GetAsync<List<Clash>>($"rosters/{division}/{month}/clashes");
+
+    public Task<ApiResult<RosterView>> SaveRosterCellsAsync(Guid division, string month, List<RosterCell> entries) =>
+        SendAsync<RosterView>(HttpMethod.Put, $"rosters/{division}/{month}", new { entries });
+
+    public Task<ApiResult<RosterPublished>> PublishRosterAsync(Guid division, string month) =>
+        PostAsync<RosterPublished>($"rosters/{division}/{month}/publish", null);
+
+    public Task<ApiResult<List<ShiftCode>>> ShiftCodesAsync(Guid division) =>
+        GetAsync<List<ShiftCode>>($"shift-definitions/{division}");
+
+    public Task<ApiResult<ShiftCode>> AddShiftCodeAsync(Guid division, ShiftCode code) =>
+        PostAsync<ShiftCode>($"shift-definitions/{division}", code);
+
+    public Task<ApiResult<ShiftCode>> ChangeShiftCodeAsync(Guid division, ShiftCode code) =>
+        SendAsync<ShiftCode>(HttpMethod.Put, $"shift-definitions/{division}/{code.Id}", code);
+
     // ---- Daily roster ----
 
     public Task<ApiResult<DailyRosterView>> DailyRosterAsync(DateOnly date) => GetAsync<DailyRosterView>($"daily-roster/{date:yyyy-MM-dd}");

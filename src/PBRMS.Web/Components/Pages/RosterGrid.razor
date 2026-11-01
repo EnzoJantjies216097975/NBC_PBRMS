@@ -1,0 +1,409 @@
+@* The monthly roster: operators down the side, days across the top, a shift code in each cell.
+   A supervisor picks a code and clicks or drags across cells, and each stroke saves itself to
+   the draft, so a month's work can't be lost by closing the tab. Nothing counts until it's
+   published. Everyone else reads what's in force. All the rules are in the API. *@
+@page "/roster"
+@using System.Globalization
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveUpdates Live
+
+<PageTitle>Monthly roster</PageTitle>
+
+<h1>Monthly roster</h1>
+
+<div class="actions">
+    <select value="@division?.Id" @onchange="ChangeDivisionAsync" aria-label="Division">
+        @foreach (var unit in divisions)
+        {
+            <option value="@unit.Id">@unit.Name</option>
+        }
+    </select>
+    <button class="quiet" @onclick="() => MoveMonthAsync(-1)" aria-label="Previous month">‹</button>
+    <strong class="month">@month.ToString("MMMM yyyy", CultureInfo.InvariantCulture)</strong>
+    <button class="quiet" @onclick="() => MoveMonthAsync(1)" aria-label="Next month">›</button>
+
+    @if (roster is not null)
+    {
+        <span class="@StatusClass">@StatusText</span>
+    }
+    @if (MayEdit)
+    {
+        <span class="muted">@(unsaved.Count > 0 ? "Saving…" : "All changes saved")</span>
+    }
+</div>
+
+@if (MayEdit && roster?.Status == RosterStatus.Draft && roster.Version > 1)
+{
+    <p class="muted">Version @(roster.Version - 1) stays in force until you publish this one.</p>
+}
+
+@if (error is not null)
+{
+    <p class="error">@error</p>
+}
+@if (message is not null)
+{
+    <p class="banner free">@message</p>
+}
+
+@if (MayEdit)
+{
+    <p class="muted">Pick a code, then click or drag across the cells. Pick it again to put it down.</p>
+}
+
+<div class="pens">
+    @foreach (var shift in codes.Where(c => c.IsActive))
+    {
+        var hours = Formats.ShiftHours(shift);
+        @if (MayEdit)
+        {
+            <button class="pen @(pen == shift.Code ? "held" : "")" style="@ColourOf(shift)" aria-pressed="@(pen == shift.Code)"
+                    title="@hours" @onclick="() => Pick(shift.Code)">
+                <span class="code">@shift.Code</span> @shift.Label
+            </button>
+        }
+        else
+        {
+            <span class="pen" style="@ColourOf(shift)" title="@hours"><span class="code">@shift.Code</span> @shift.Label</span>
+        }
+    }
+    @if (MayEdit)
+    {
+        <button class="pen @(pen == "" ? "held" : "")" aria-pressed="@(pen == "")" @onclick='() => Pick("")'>Blank</button>
+        <label class="tick"><input type="checkbox" @bind="addToCell" /> Add to what's in the cell, like N+ST2</label>
+    }
+</div>
+
+@if (loaded && operators.Count == 0)
+{
+    <p class="muted">There are no operators in this division yet.</p>
+}
+else if (loaded)
+{
+    <div class="grid-scroll" @onmouseleave="EndStrokeAsync" @onmouseup="EndStrokeAsync">
+        <table class="roster">
+            <thead>
+                <tr>
+                    <th class="who-col">Operator</th>
+                    @foreach (var day in days)
+                    {
+                        <th class="@DayClass(day)">
+                            <span class="weekday">@(day.ToString("ddd", CultureInfo.InvariantCulture)[..2])</span>
+                            @day.Day
+                        </th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var person in operators)
+                {
+                    <tr>
+                        <th class="who-col" scope="row">@person.Name</th>
+                        @foreach (var day in days)
+                        {
+                            var key = (person.Id, day);
+                            var text = cells.GetValueOrDefault(key, "");
+                            var clash = clashCells.Contains((person.Name, day));
+                            <td class="@DayClass(day) @KindClass(text) @(clash ? "clash" : "")" title="@CellTitle(person, day, text, clash)">
+                                @if (MayEdit)
+                                {
+                                    <button class="cell" aria-label="@person.Name, @day.ToString("dd/MM")"
+                                            @onmousedown="() => StartStroke(key)"
+                                            @onmouseover="() => ContinueStroke(key)"
+                                            @onclick="() => ClickAsync(key)">@text@(clash ? " !" : "")</button>
+                                }
+                                else
+                                {
+                                    <span class="cell">@text@(clash ? " !" : "")</span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (clashes.Count > 0)
+{
+    <div class="problem">
+        <p><strong>This roster clashes with confirmed bookings.</strong> Publishing still goes ahead, so have the crew changed.</p>
+        @foreach (var clash in clashes)
+        {
+            <p>@Formats.Clash(clash)</p>
+        }
+    </div>
+}
+
+@if (MayEdit && roster?.Status == RosterStatus.Draft)
+{
+    <div class="actions">
+        @if (askingToPublish)
+        {
+            <span>Put this roster in force and tell the operators on it?</span>
+            <button @onclick="PublishAsync">Yes, publish</button>
+            <button class="quiet" @onclick="() => askingToPublish = false">Not yet</button>
+        }
+        else
+        {
+            <button disabled="@(unsaved.Count > 0)" @onclick="() => askingToPublish = true">Publish</button>
+        }
+    </div>
+}
+
+@code {
+    private List<OrgUnitRow> divisions = [];
+    private OrgUnitRow? division;
+    private DateOnly month = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private List<DateOnly> days = [];
+
+    private RosterView? roster;
+    private List<OperatorRow> operators = [];
+    private List<ShiftCode> codes = [];
+    private List<Clash> clashes = [];
+    private HashSet<(string Name, DateOnly Day)> clashCells = [];
+
+    // What's on screen, and the cells painted but not yet saved. The live refresh can't undo
+    // a stroke, because these are laid back over whatever it brings in.
+    private Dictionary<(Guid Operator, DateOnly Day), string> cells = [];
+    private readonly Dictionary<(Guid Operator, DateOnly Day), string> unsaved = [];
+
+    private string? pen;
+    private bool addToCell, painting, saving, loaded, askingToPublish;
+    private string? error, message;
+
+    private bool MayEdit => division is not null && Api.Has(Role.Supervisor, division.Name);
+
+    private string MonthText => month.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+
+    private string StatusText => roster!.Status switch
+    {
+        RosterStatus.Published => $"Published, version {roster.Version}",
+        RosterStatus.Draft => $"Draft, version {roster.Version}",
+        _ => "Not published yet"
+    };
+
+    private string StatusClass => roster!.Status == RosterStatus.Published ? "badge good" : "badge wait";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Live.Changed += ReloadAsync;
+
+        var units = (await Api.OrgUnitsAsync()).Value ?? [];
+        var all = units.Where(u => u.Kind == OrgUnitKind.TvOpsDivision).ToList();
+
+        // Supervisors and operators see their own division; the offices that cover them all see every one.
+        var mine = all.Where(u => Api.Has(Role.Supervisor, u.Name) || Api.Has(Role.Operator, u.Name)).ToList();
+        var seesAll = mine.Count == 0 || Api.Has(Role.BookingOfficer, Role.TvOperationsManager, Role.Admin, Role.Management);
+        divisions = seesAll ? all : mine;
+
+        // A supervisor who also operates opens on the division they run.
+        division = divisions.FirstOrDefault(u => Api.Has(Role.Supervisor, u.Name)) ?? divisions.FirstOrDefault();
+        await LoadAllAsync();
+    }
+
+    /// <summary>Loads everything for the chosen division and month.</summary>
+    private async Task LoadAllAsync()
+    {
+        days = Enumerable.Range(0, DateTime.DaysInMonth(month.Year, month.Month)).Select(month.AddDays).ToList();
+        if (division is null)
+            return;
+
+        operators = (await Api.OperatorsAsync(division.Id)).Value ?? [];
+        codes = (await Api.ShiftCodesAsync(division.Id)).Value ?? [];
+        await LoadRosterAsync();
+        loaded = true;
+    }
+
+    private async Task LoadRosterAsync()
+    {
+        var result = await Api.RosterAsync(division!.Id, MonthText);
+        roster = result.Value;
+        error = result.Error;
+
+        cells = roster?.Entries.ToDictionary(e => (e.OperatorId, e.Date), e => e.Code ?? "") ?? [];
+        foreach (var (key, code) in unsaved)
+            cells[key] = code;
+
+        await LoadClashesAsync();
+    }
+
+    private async Task LoadClashesAsync()
+    {
+        // Only the division's supervisor and the Booking Officer may ask.
+        var mayLook = MayEdit || Api.Has(Role.BookingOfficer);
+        clashes = mayLook ? (await Api.RosterClashesAsync(division!.Id, MonthText)).Value ?? [] : [];
+
+        // A clash doesn't say which day of a long booking it's about, so all its days are marked.
+        clashCells = clashes
+            .SelectMany(c => RosterRules.DaysCovered(c.StartsAt, c.EndsAt).Select(day => (c.Who, day)))
+            .ToHashSet();
+    }
+
+    private async Task ChangeDivisionAsync(ChangeEventArgs change)
+    {
+        await FlushAsync();
+        division = divisions.FirstOrDefault(u => u.Id.ToString() == change.Value?.ToString());
+        await ShowFreshAsync();
+    }
+
+    private async Task MoveMonthAsync(int by)
+    {
+        await FlushAsync();
+        month = month.AddMonths(by);
+        await ShowFreshAsync();
+    }
+
+    private async Task ShowFreshAsync()
+    {
+        pen = null;
+        message = null;
+        askingToPublish = false;
+        await LoadAllAsync();
+    }
+
+    // ---- Painting ----
+
+    private void Pick(string code)
+    {
+        pen = pen == code ? null : code;
+        message = null;
+    }
+
+    private void StartStroke((Guid, DateOnly) key)
+    {
+        painting = true;
+        Paint(key);
+    }
+
+    private void ContinueStroke((Guid, DateOnly) key)
+    {
+        if (painting)
+            Paint(key);
+    }
+
+    private async Task EndStrokeAsync()
+    {
+        painting = false;
+        await FlushAsync();
+    }
+
+    // A mouse click has already painted by now, so this is for the keyboard. Painting the same thing twice changes nothing.
+    private async Task ClickAsync((Guid, DateOnly) key)
+    {
+        Paint(key);
+        await FlushAsync();
+    }
+
+    private void Paint((Guid Operator, DateOnly Day) key)
+    {
+        if (pen is null)
+            return;
+
+        var now = cells.GetValueOrDefault(key, "");
+        var code = pen;
+        if (addToCell && pen.Length > 0 && now.Length > 0)
+            code = RosterRules.SplitCodes(now).Contains(pen) ? now : $"{now}+{pen}";
+
+        if (code == now)
+            return;
+
+        cells[key] = code;
+        unsaved[key] = code;
+        message = null;
+    }
+
+    /// <summary>Sends what's been painted. Strokes made while a save is on its way go in the next one.</summary>
+    private async Task FlushAsync()
+    {
+        if (saving || unsaved.Count == 0)
+            return;
+
+        saving = true;
+        while (unsaved.Count > 0)
+        {
+            var batch = unsaved.ToList();
+            var result = await Api.SaveRosterCellsAsync(division!.Id, MonthText,
+                batch.Select(c => new RosterCell(c.Key.Operator, c.Key.Day, c.Value)).ToList());
+
+            if (!result.Ok)
+            {
+                // Show the grid as it really is, so nobody believes a refused stroke was kept.
+                unsaved.Clear();
+                await LoadRosterAsync();
+                error = $"That wasn't saved: {result.Error}";
+                saving = false;
+                return;
+            }
+
+            roster = result.Value;
+            error = null;
+            foreach (var (key, code) in batch)
+            {
+                if (unsaved.GetValueOrDefault(key) == code)
+                    unsaved.Remove(key);
+            }
+        }
+
+        saving = false;
+        await LoadClashesAsync();
+    }
+
+    private async Task PublishAsync()
+    {
+        askingToPublish = false;
+        var result = await Api.PublishRosterAsync(division!.Id, MonthText);
+        error = result.Error;
+
+        if (result.Value is { } published)
+        {
+            roster = published.Roster;
+            clashes = published.Clashes;
+            message = "Published. The operators on it have been told.";
+        }
+    }
+
+    // ---- Showing it ----
+
+    private string ColourOf(ShiftCode code) => code.Colour is null ? "" : $"--code:{code.Colour}";
+
+    private string DayClass(DateOnly day)
+    {
+        var weekend = day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday ? "weekend" : "";
+        return day == NbcTime.DateOf(DateTimeOffset.UtcNow) ? $"{weekend} today" : weekend;
+    }
+
+    /// <summary>Off, leave and away read differently at a glance. The code in the cell always says it in words too.</summary>
+    private string KindClass(string text)
+    {
+        var first = RosterRules.SplitCodes(text).FirstOrDefault();
+        return codes.FirstOrDefault(c => c.Code == first)?.Kind switch
+        {
+            ShiftKind.Off => "off",
+            ShiftKind.Leave => "leave",
+            ShiftKind.Away => "away",
+            _ => ""
+        };
+    }
+
+    private string CellTitle(OperatorRow person, DateOnly day, string text, bool clash)
+    {
+        var meaning = RosterRules.SplitCodes(text).Select(part => codes.FirstOrDefault(c => c.Code == part)?.Label ?? part);
+        var title = $"{person.Name}, {day:dd/MM}: {string.Join(" + ", meaning)}";
+        return clash ? $"{title}. Clashes with a confirmed booking." : title;
+    }
+
+    private Task ReloadAsync() => InvokeAsync(async () =>
+    {
+        // Mid-stroke the grid is the newest thing there is. The save at the end brings it all together.
+        if (painting || saving || division is null)
+            return;
+
+        await LoadRosterAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Live.Changed -= ReloadAsync;
+}

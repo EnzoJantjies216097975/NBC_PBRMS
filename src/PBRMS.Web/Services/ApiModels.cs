@@ -37,6 +37,19 @@ public record OperatorRow(Guid Id, string FirstName, string Surname)
 
 public record NotificationRow(Guid Id, string Text, Guid? BookingId, DateTimeOffset CreatedAt, DateTimeOffset? ReadAt);
 
+/// <summary>One cell of the monthly roster. An empty code blanks it.</summary>
+public record RosterCell(Guid OperatorId, DateOnly Date, string? Code);
+
+public record RosterView(Guid DivisionId, string Month, int Version, RosterStatus? Status, List<RosterCell> Entries);
+
+public record RosterPublished(RosterView Roster, List<Clash> Clashes);
+
+/// <summary>A shift code on a division's legend, as the API sends it and takes it back.</summary>
+public record ShiftCode(
+    Guid Id, string Code, string Label, ShiftKind Kind,
+    TimeOnly? Start, TimeOnly? End, TimeOnly? SecondStart, TimeOnly? SecondEnd,
+    string? Colour, bool IsActive, Venue? Studio);
+
 public record AppOperatorRow(Guid Id, string Name);
 
 public record AppBusyRow(DateTimeOffset StartsAt, DateTimeOffset EndsAt, string Operator);

@@ -24,6 +24,14 @@ else
                 <NavLink href="bookings/new">New booking</NavLink>
             }
             <NavLink href="daily-roster">Daily roster</NavLink>
+            @if (Api.Has(Role.Supervisor, Role.BookingOfficer, Role.Operator, Role.TvOperationsManager, Role.Admin, Role.Management))
+            {
+                <NavLink href="roster">Monthly roster</NavLink>
+            }
+            @if (Api.Has(Role.Supervisor, Role.Admin))
+            {
+                <NavLink href="shift-codes">Shift codes</NavLink>
+            }
             <NavLink href="app-room">APP room</NavLink>
             <NavLink href="notifications">Notifications@(unread > 0 ? $" ({unread})" : "")</NavLink>
         </nav>
