@@ -33,6 +33,10 @@ else
                 <NavLink href="shift-codes">Shift codes</NavLink>
             }
             <NavLink href="app-room">APP room</NavLink>
+            @if (Api.Has(Role.Supervisor, Role.TvOperationsManager, Role.Management, Role.Admin))
+            {
+                <NavLink href="reports">Reports</NavLink>
+            }
             <NavLink href="notifications">Notifications@(unread > 0 ? $" ({unread})" : "")</NavLink>
         </nav>
         <span class="who">@Api.Me.Name</span>

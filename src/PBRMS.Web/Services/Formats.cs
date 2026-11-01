@@ -43,6 +43,28 @@ public static class Formats
         _ => "On duty"
     };
 
+    /// <summary>A length of time, the way NBC writes hours: 90 minutes is 1h30.</summary>
+    public static string Duration(int minutes) => $"{minutes / 60}h{minutes % 60:00}";
+
+    /// <summary>A role in words. Nothing if there's no role, as when the monthly roster filled a position.</summary>
+    public static string RoleName(Role? role) => role switch
+    {
+        null => "",
+        Role.ExecutiveProducer => "Executive Producer",
+        Role.BookingOfficer => "Booking Officer",
+        Role.AppOperator => "APP operator",
+        Role.TvOperationsManager => "TV Operations Manager",
+        _ => role.ToString()!
+    };
+
+    /// <summary>Why work is on the off-roster report, in words.</summary>
+    public static string OffRosterKind(ClashKind kind) => kind switch
+    {
+        ClashKind.CallIn => "Called in on a day off",
+        ClashKind.OutsideShift => "Outside their shift",
+        _ => kind.ToString()
+    };
+
     /// <summary>A time today, or with its date if it isn't today.</summary>
     public static string Until(DateTimeOffset moment) =>
         NbcTime.DateOf(moment) == NbcTime.DateOf(DateTimeOffset.UtcNow) ? Clock(moment) : When(moment);

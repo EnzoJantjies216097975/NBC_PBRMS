@@ -64,3 +64,22 @@ public record AppRoomStatus(bool Busy, string? Production, string? BookedBy, str
 public record AppSessionRow(
     Guid Id, string Production, string Requester, string Operator, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
     AppSessionStatus Status, string? Note, DateTimeOffset? SuggestedStartsAt, DateTimeOffset? SuggestedEndsAt, bool IsWalkIn);
+
+/// <summary>A time someone was booked on a day off or outside their shift.</summary>
+public record OffRosterRow(
+    DateTimeOffset StartsAt, DateTimeOffset EndsAt, Guid OperatorId, string Operator, string Division,
+    int ProductionNo, string Title, ClashKind Kind, string Reason, string RecordedBy, DateTimeOffset RecordedAt);
+
+public record AppUsageSession(
+    string Production, string Requester, Role RequesterRole, string Operator,
+    DateTimeOffset StartsAt, DateTimeOffset EndsAt, int Minutes, bool WalkIn);
+
+public record AppUsageTotal(string Name, int Sessions, int Minutes, int WalkIns);
+
+public record AppUsageReport(List<AppUsageSession> Sessions, List<AppUsageTotal> ByProduction, List<AppUsageTotal> ByRequester);
+
+/// <summary>Who decided a crew position, and who confirmed its booking.</summary>
+public record ConfirmationRow(
+    int ProductionNo, string Title, Venue Venue, DateTimeOffset StartsAt, BookingStatus Status, string Position, string Operator,
+    string DecidedBy, Role? DecidedByRole, DateTimeOffset DecidedAt,
+    string? ConfirmedBy, Role? ConfirmedByRole, DateTimeOffset? ConfirmedAt);

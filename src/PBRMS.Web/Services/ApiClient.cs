@@ -165,6 +165,17 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
     public Task<ApiResult<AppSessionRow>> SuggestTimeAsync(Guid id, DateTimeOffset startsAt, DateTimeOffset endsAt) =>
         PostAsync<AppSessionRow>($"app-sessions/{id}/suggest-time", new { startsAt, endsAt });
 
+    // ---- Reports ----
+
+    public Task<ApiResult<List<OffRosterRow>>> OffRosterReportAsync(DateOnly from, DateOnly to, Guid? division) =>
+        GetAsync<List<OffRosterRow>>($"reports/off-roster-work?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}{(division is { } id ? $"&divisionId={id}" : "")}");
+
+    public Task<ApiResult<AppUsageReport>> AppUsageReportAsync(DateOnly from, DateOnly to) =>
+        GetAsync<AppUsageReport>($"reports/app-usage?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<ApiResult<List<ConfirmationRow>>> ConfirmationsReportAsync(DateOnly from, DateOnly to) =>
+        GetAsync<List<ConfirmationRow>>($"reports/confirmations?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
     // ---- Notifications ----
 
     public Task<ApiResult<List<NotificationRow>>> NotificationsAsync() => GetAsync<List<NotificationRow>>("notifications");

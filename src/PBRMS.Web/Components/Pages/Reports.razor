@@ -1,0 +1,300 @@
+@* The reports, over any period. Each person sees only the reports their role allows, and the
+   API enforces that too: work outside the roster for supervisors and managers, APP usage for
+   supervisors and the TV Operations Manager, and who confirmed what for Admin. *@
+@page "/reports"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveUpdates Live
+@inject IJSRuntime Browser
+
+<PageTitle>Reports</PageTitle>
+
+<div class="no-print">
+    <h1>Reports</h1>
+
+    @if (available.Count == 0)
+    {
+        <p>There are no reports for your role.</p>
+    }
+
+    <div class="tabs">
+        @foreach (var (kind, name) in available)
+        {
+            <button class="@(kind == report ? "" : "quiet")" aria-pressed="@(kind == report)" @onclick="() => ChooseAsync(kind)">@name</button>
+        }
+    </div>
+
+    @if (available.Count > 0)
+    {
+        <div class="actions">
+            <label class="inline">From <input type="date" @bind="from" @bind:after="LoadAsync" /></label>
+            <label class="inline">To <input type="date" @bind="to" @bind:after="LoadAsync" /></label>
+            @if (report == ReportKind.OffRoster && divisions.Count > 1)
+            {
+                <select @bind="divisionId" @bind:after="LoadAsync" aria-label="Division">
+                    <option value="">All divisions</option>
+                    @foreach (var division in divisions)
+                    {
+                        <option value="@division.Id">@division.Name</option>
+                    }
+                </select>
+            }
+            <button class="quiet" @onclick="PrintAsync">Print</button>
+        </div>
+    }
+</div>
+
+@if (error is not null)
+{
+    <p class="error">@error</p>
+}
+
+@if (available.Count > 0 && error is null)
+{
+    <h2>@available.First(a => a.Kind == report).Name, @Day(from) to @Day(to)</h2>
+
+    @switch (report)
+    {
+        case ReportKind.OffRoster when offRoster is not null:
+            @OffRosterReport(offRoster)
+            break;
+        case ReportKind.AppUsage when appUsage is not null:
+            @AppUsageTables(appUsage)
+            break;
+        case ReportKind.Confirmations when confirmations is not null:
+            @ConfirmationsReport(confirmations)
+            break;
+    }
+}
+
+@code {
+    private enum ReportKind { OffRoster, AppUsage, Confirmations }
+
+    private List<(ReportKind Kind, string Name)> available = [];
+    private ReportKind report;
+
+    // This month, up to its last day, unless someone picks otherwise.
+    private DateOnly from, to;
+    private Guid? divisionId;
+    private List<OrgUnitRow> divisions = [];
+
+    private List<OffRosterRow>? offRoster;
+    private AppUsageReport? appUsage;
+    private List<ConfirmationRow>? confirmations;
+    private string? error;
+
+    // Counts the requests, so a slow answer to an older one can't replace a newer one.
+    private int requests;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = NbcTime.DateOf(DateTimeOffset.UtcNow);
+        from = new DateOnly(today.Year, today.Month, 1);
+        to = from.AddMonths(1).AddDays(-1);
+
+        // The same rules as the API: this only decides what's worth offering.
+        if (Api.Has(Role.Supervisor, Role.TvOperationsManager, Role.Management, Role.Admin))
+            available.Add((ReportKind.OffRoster, "Work outside the roster"));
+        if (Api.Has(Role.Supervisor, Role.TvOperationsManager, Role.Admin))
+            available.Add((ReportKind.AppUsage, "APP usage"));
+        if (Api.Has(Role.Admin))
+            available.Add((ReportKind.Confirmations, "Who confirmed what"));
+
+        if (available.Count == 0)
+            return;
+
+        report = available[0].Kind;
+
+        // A supervisor sees their own divisions. Managers and Admin see them all.
+        var units = (await Api.OrgUnitsAsync()).Value ?? [];
+        var seesAll = Api.Has(Role.TvOperationsManager, Role.Management, Role.Admin);
+        divisions = units.Where(u => u.Kind == OrgUnitKind.TvOpsDivision && (seesAll || Api.Has(Role.Supervisor, u.Name))).ToList();
+
+        Live.Changed += ReloadAsync;
+        await LoadAsync();
+    }
+
+    private async Task ChooseAsync(ReportKind kind)
+    {
+        report = kind;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var request = ++requests;
+
+        if (to < from)
+        {
+            error = "The end of the period is before its start.";
+            return;
+        }
+
+        switch (report)
+        {
+            case ReportKind.OffRoster:
+                Show(request, await Api.OffRosterReportAsync(from, to, divisionId), value => offRoster = value);
+                break;
+            case ReportKind.AppUsage:
+                Show(request, await Api.AppUsageReportAsync(from, to), value => appUsage = value);
+                break;
+            case ReportKind.Confirmations:
+                Show(request, await Api.ConfirmationsReportAsync(from, to), value => confirmations = value);
+                break;
+        }
+    }
+
+    private void Show<T>(int request, ApiResult<T> result, Action<T?> keep)
+    {
+        if (request != requests)
+            return;
+
+        error = result.Error;
+        keep(result.Value);
+    }
+
+    private async Task PrintAsync() => await Browser.InvokeVoidAsync("print");
+
+    private Task ReloadAsync() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Live.Changed -= ReloadAsync;
+
+    private static string Day(DateOnly date) => date.ToString("dd/MM/yyyy");
+
+    // A roster change can add a second record for the same work, which must only count once.
+    private static string Hours(IEnumerable<OffRosterRow> rows) =>
+        Formats.Duration((int)rows.DistinctBy(r => (r.ProductionNo, r.StartsAt)).Sum(r => (r.EndsAt - r.StartsAt).TotalMinutes));
+
+    private RenderFragment OffRosterReport(List<OffRosterRow> rows) =>
+        @<text>
+            @if (rows.Count == 0)
+            {
+                <p class="muted">Nobody worked outside the roster in this period.</p>
+            }
+            else
+            {
+                <h3>By person</h3>
+                <table>
+                    <thead><tr><th>Operator</th><th>Division</th><th>Times called in</th><th>Times outside their shift</th><th>Hours</th></tr></thead>
+                    <tbody>
+                        @foreach (var person in rows.GroupBy(r => (r.OperatorId, r.Operator, r.Division)).OrderByDescending(g => g.Count()))
+                        {
+                            <tr>
+                                <td>@person.Key.Operator</td>
+                                <td>@person.Key.Division</td>
+                                <td>@person.Count(r => r.Kind == ClashKind.CallIn)</td>
+                                <td>@person.Count(r => r.Kind == ClashKind.OutsideShift)</td>
+                                <td>@Hours(person)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+
+                <h3>Every record</h3>
+                <table>
+                    <thead><tr><th>When</th><th>Operator</th><th>Production</th><th>What happened</th><th>Recorded by</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in rows)
+                        {
+                            <tr>
+                                <td>@Formats.When(row.StartsAt)</td>
+                                <td>@row.Operator<div class="muted">@row.Division</div></td>
+                                <td>#@row.ProductionNo @row.Title</td>
+                                <td>@Formats.OffRosterKind(row.Kind)<div class="muted">@row.Reason</div></td>
+                                <td>@row.RecordedBy</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </text>;
+
+    private RenderFragment AppUsageTables(AppUsageReport usage) =>
+        @<text>
+            @if (usage.Sessions.Count == 0)
+            {
+                <p class="muted">No APP sessions in this period.</p>
+            }
+            else
+            {
+                <h3>By production</h3>
+                @AppTotals(usage.ByProduction, "Production")
+
+                <h3>By who asked</h3>
+                @AppTotals(usage.ByRequester, "Person")
+
+                <h3>Every session</h3>
+                <table>
+                    <thead><tr><th>When</th><th>Production</th><th>Asked by</th><th>Operator</th><th>Time</th><th>Booked</th></tr></thead>
+                    <tbody>
+                        @foreach (var session in usage.Sessions)
+                        {
+                            <tr>
+                                <td>@Formats.When(session.StartsAt)</td>
+                                <td>@session.Production</td>
+                                <td>@session.Requester<div class="muted">@Formats.RoleName(session.RequesterRole)</div></td>
+                                <td>@session.Operator</td>
+                                <td>@Formats.Duration(session.Minutes)</td>
+                                <td>@(session.WalkIn ? "Walk-in" : "In advance")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </text>;
+
+    private static RenderFragment AppTotals(List<AppUsageTotal> totals, string heading) =>
+        @<table>
+            <thead><tr><th>@heading</th><th>Sessions</th><th>Walk-ins</th><th>Time</th></tr></thead>
+            <tbody>
+                @foreach (var total in totals)
+                {
+                    <tr><td>@total.Name</td><td>@total.Sessions</td><td>@total.WalkIns</td><td>@Formats.Duration(total.Minutes)</td></tr>
+                }
+            </tbody>
+        </table>;
+
+    private RenderFragment ConfirmationsReport(List<ConfirmationRow> rows) =>
+        @<text>
+            @if (rows.Count == 0)
+            {
+                <p class="muted">No crew positions were filled for this period.</p>
+            }
+            else
+            {
+                <table>
+                    <thead><tr><th>Production</th><th>When</th><th>Position</th><th>Operator</th><th>Decided by</th><th>Confirmed by</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in rows)
+                        {
+                            <tr>
+                                <td>#@row.ProductionNo @row.Title<div><span class="@Formats.StatusClass(row.Status)">@Formats.Status(row.Status)</span></div></td>
+                                <td>@Formats.When(row.StartsAt)<div class="muted">@Formats.Venue(row.Venue)</div></td>
+                                <td>@row.Position</td>
+                                <td>@row.Operator</td>
+                                <td>
+                                    @row.DecidedBy
+                                    <div class="muted">@Formats.RoleName(row.DecidedByRole) @Formats.When(row.DecidedAt)</div>
+                                </td>
+                                <td>
+                                    @if (row.ConfirmedBy is null)
+                                    {
+                                        <span class="muted">Not confirmed</span>
+                                    }
+                                    else
+                                    {
+                                        @row.ConfirmedBy
+                                        <div class="muted">@Formats.RoleName(row.ConfirmedByRole) @Formats.When(row.ConfirmedAt!.Value)</div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </text>;
+}

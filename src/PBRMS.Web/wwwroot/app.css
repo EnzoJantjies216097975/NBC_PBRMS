@@ -167,6 +167,12 @@ th { background: #EFEDE5; font-size: 13px; }
 .line-editor { padding: 12px; background: var(--paper); border-left: 4px solid var(--brand); }
 .line-editor h3 { margin: 14px 0 4px; font-size: 13px; }
 
+/* Reports. */
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
+label.inline input { font-weight: 400; }
+h3 { margin: 18px 0 6px; font-size: 14px; }
+
 tr.retired { color: var(--muted); }
 td.code { box-shadow: inset 4px 0 0 var(--code, transparent); padding-left: 12px; }
 .row-actions { white-space: nowrap; }
@@ -181,6 +187,13 @@ td.code { box-shadow: inset 4px 0 0 var(--code, transparent); padding-left: 12px
 
     /* The row form sits inside the table, which scrolls sideways. It stays on screen instead. */
     .line-editor { position: sticky; left: 0; width: calc(100vw - 50px); }
+}
+
+/* On paper, only the report: not the menu or the filters. */
+@media print {
+    body { background: #fff; }
+    .top, .no-print { display: none; }
+    .page { max-width: none; padding: 0; }
 }
 
 #blazor-error-ui {

@@ -104,7 +104,7 @@ Then open <http://localhost:5103> and pick who to be. Each browser tab signs in 
 can open two tabs as different people and watch changes arrive live.
 
 So far it has: My work, the booking form, booking pages (approve, crew, confirm), the daily roster
-with row editing and its PDF, the monthly roster grid, shift codes, the APP room, and notifications. On NBC's servers the sign-in page becomes the
+with row editing and its PDF, the monthly roster grid, shift codes, the APP room, reports, and notifications. On NBC's servers the sign-in page becomes the
 Microsoft sign-in, and `Api:BaseUrl` must point at the API.
 
 ## How a booking moves
