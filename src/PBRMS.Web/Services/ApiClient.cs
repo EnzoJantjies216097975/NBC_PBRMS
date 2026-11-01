@@ -205,6 +205,9 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
     public Task<ApiResult<List<ConfirmationRow>>> ConfirmationsReportAsync(DateOnly from, DateOnly to) =>
         GetAsync<List<ConfirmationRow>>($"reports/confirmations?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
+    public Task<ApiResult<AuditLog>> AuditLogAsync(DateOnly from, DateOnly to) =>
+        GetAsync<AuditLog>($"reports/audit?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
     // ---- Admin: people, departments and divisions ----
 
     public Task<ApiResult<List<PersonRow>>> PeopleAsync() => GetAsync<List<PersonRow>>("users");

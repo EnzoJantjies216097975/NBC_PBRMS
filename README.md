@@ -51,6 +51,7 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `GET /bookings/queue` | Bookings waiting for you to approve or send back |
 | `POST /bookings/{id}/transition` | `{ "action": "...", "note": "..." }`. Actions: Submit, Approve, SendBack, Start, End, Cancel. |
 | `GET /reports/off-roster-work?from=&to=` | Who was booked on a day off or outside their shift. The TV Operations Manager, Management and Admin see everyone; supervisors see their own divisions. Add `divisionId=` for one division. |
+| `GET /reports/audit?from=&to=` | The audit log, newest first (Admin). Every saved change, with who made it. |
 | `GET /notifications` | Your newest notifications |
 | `POST /notifications/{id}/read` | Mark one as read |
 | `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. Studio crew: the Booking Officer or the division's supervisor. Outside crew: the division's supervisor. On a confirmed booking it replaces the operator. |
@@ -108,6 +109,25 @@ can open two tabs as different people and watch changes arrive live.
 So far it has: My work, the booking form, booking pages (approve, crew, confirm), the daily roster
 with row editing and its PDF, the monthly roster grid, shift codes, the APP room, reports, notifications, and People and Departments for Admin. On NBC's servers the sign-in page becomes the
 Microsoft sign-in, and `Api:BaseUrl` must point at the API.
+
+## Set up a new server
+
+The sample people exist only in Development, so a new server starts with nobody who can sign in.
+Only an Admin can add people, so the first one is set up from the server:
+
+1. Set the connection string and `Auth:Microsoft:TenantId` and `ClientId`, as for running the API.
+   The API won't start without them.
+2. From the API's folder, run:
+   ```
+   dotnet PBRMS.Api.dll setup first.admin@nbc.example First Surname
+   ```
+   This creates or updates the database and adds that person as Admin, using their NBC email.
+   It refuses if NBC already has an active Admin, so it can't be used to give anyone access later.
+3. That person signs in and adds the departments, divisions and everyone else under Departments and People.
+   Each division's supervisor then adds its shift codes.
+
+The same command also updates the database after a new version is installed. It then says NBC
+already has an Admin, which is expected: the update has still been done.
 
 ## How a booking moves
 

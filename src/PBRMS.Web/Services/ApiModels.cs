@@ -83,6 +83,12 @@ public record AppSessionRow(
     Guid Id, string Production, string Requester, string Operator, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
     AppSessionStatus Status, string? Note, DateTimeOffset? SuggestedStartsAt, DateTimeOffset? SuggestedEndsAt, bool IsWalkIn);
 
+/// <summary>One line of the audit log: who changed what.</summary>
+public record AuditLogRow(DateTimeOffset At, string Who, string What, string? Item, AuditAction Action, string Summary);
+
+/// <param name="More">True if the period holds more lines than these.</param>
+public record AuditLog(List<AuditLogRow> Rows, bool More);
+
 /// <summary>A time someone was booked on a day off or outside their shift.</summary>
 public record OffRosterRow(
     DateTimeOffset StartsAt, DateTimeOffset EndsAt, Guid OperatorId, string Operator, string Division,

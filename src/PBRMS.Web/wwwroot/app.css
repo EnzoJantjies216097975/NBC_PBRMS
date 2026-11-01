@@ -172,6 +172,9 @@ th { background: #EFEDE5; font-size: 13px; }
 label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
 label.inline input { font-weight: 400; }
 h3 { margin: 18px 0 6px; font-size: 14px; }
+table.audit td { font-size: 13px; }
+table.audit td:first-child, table.audit td:nth-child(2) { white-space: nowrap; }
+table.audit td:last-child { overflow-wrap: anywhere; }
 
 tr.retired { color: var(--muted); }
 td.code { box-shadow: inset 4px 0 0 var(--code, transparent); padding-left: 12px; }

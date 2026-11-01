@@ -39,6 +39,10 @@
                     }
                 </select>
             }
+            @if (report == ReportKind.AuditLog)
+            {
+                <input class="wide" @bind="logSearch" @bind:event="oninput" placeholder="Find a name or a word in this period" aria-label="Find in the log" />
+            }
             <button class="quiet" @onclick="PrintAsync">Print</button>
         </div>
     }
@@ -64,11 +68,14 @@
         case ReportKind.Confirmations when confirmations is not null:
             @ConfirmationsReport(confirmations)
             break;
+        case ReportKind.AuditLog when auditLog is not null:
+            @AuditLogReport(auditLog)
+            break;
     }
 }
 
 @code {
-    private enum ReportKind { OffRoster, AppUsage, Confirmations }
+    private enum ReportKind { OffRoster, AppUsage, Confirmations, AuditLog }
 
     private List<(ReportKind Kind, string Name)> available = [];
     private ReportKind report;
@@ -81,6 +88,8 @@
     private List<OffRosterRow>? offRoster;
     private AppUsageReport? appUsage;
     private List<ConfirmationRow>? confirmations;
+    private AuditLog? auditLog;
+    private string logSearch = "";
     private string? error;
 
     // Counts the requests, so a slow answer to an older one can't replace a newer one.
@@ -98,7 +107,10 @@
         if (Api.Has(Role.Supervisor, Role.TvOperationsManager, Role.Admin))
             available.Add((ReportKind.AppUsage, "APP usage"));
         if (Api.Has(Role.Admin))
+        {
             available.Add((ReportKind.Confirmations, "Who confirmed what"));
+            available.Add((ReportKind.AuditLog, "Everything that changed"));
+        }
 
         if (available.Count == 0)
             return;
@@ -140,6 +152,9 @@
                 break;
             case ReportKind.Confirmations:
                 Show(request, await Api.ConfirmationsReportAsync(from, to), value => confirmations = value);
+                break;
+            case ReportKind.AuditLog:
+                Show(request, await Api.AuditLogAsync(from, to), value => auditLog = value);
                 break;
         }
     }
@@ -257,6 +272,45 @@
                 }
             </tbody>
         </table>;
+
+    private bool MatchesSearch(AuditLogRow row) =>
+        $"{row.Who} {row.What} {row.Item} {row.Summary}".Contains(logSearch.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private RenderFragment AuditLogReport(AuditLog log) =>
+        @<text>
+            @if (log.More)
+            {
+                <p class="problem">This shows only the newest @log.Rows.Count lines. Shorten the period to see the rest.</p>
+            }
+
+            @if (log.Rows.Count == 0)
+            {
+                <p class="muted">Nothing changed in this period.</p>
+            }
+            else
+            {
+                <table class="audit">
+                    <thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in log.Rows.Where(MatchesSearch))
+                        {
+                            <tr>
+                                <td>@Formats.When(row.At)</td>
+                                <td>@row.Who</td>
+                                <td>
+                                    @row.Action: @row.What
+                                    @if (row.Item is not null)
+                                    {
+                                        <div class="muted">@row.Item</div>
+                                    }
+                                </td>
+                                <td>@row.Summary</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </text>;
 
     private RenderFragment ConfirmationsReport(List<ConfirmationRow> rows) =>
         @<text>

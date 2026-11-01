@@ -14,7 +14,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<PbrmsDbContext>((services, options) => options
     .UseSqlServer(builder.Configuration.GetConnectionString("Pbrms"))
-    .AddInterceptors(services.GetRequiredService<LivePushOnSave>(), services.GetRequiredService<LivePushOnCommit>()));
+    .AddInterceptors(
+        services.GetRequiredService<AuditOnSave>(),
+        services.GetRequiredService<LivePushOnSave>(),
+        services.GetRequiredService<LivePushOnCommit>()));
+
+// The audit log: every saved change, with who made it (see AuditOnSave.cs).
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<AuditOnSave>();
 
 // Live updates to open screens (see Live/LiveHub.cs).
 builder.Services.AddSignalR();
@@ -46,6 +53,19 @@ builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+// First-time setup on a new server: PBRMS.Api setup <email> <first name> <surname>
+// Creates or updates the database and adds the first Admin, then stops. See README.md.
+if (args is ["setup", var email, var firstName, var surname])
+{
+    using var setupScope = app.Services.CreateScope();
+    var setupDb = setupScope.ServiceProvider.GetRequiredService<PbrmsDbContext>();
+    await setupDb.Database.MigrateAsync();
+
+    var problem = await FirstAdmin.AddAsync(setupDb, email, firstName, surname);
+    Console.WriteLine(problem ?? $"{firstName} {surname} is set up as the first Admin.");
+    return problem is null ? 0 : 1;
+}
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
@@ -79,6 +99,7 @@ app.MapRosterEndpoints();
 app.MapNotificationEndpoints();
 app.MapOffRosterEndpoints();
 app.MapConfirmationEndpoints();
+app.MapAuditEndpoints();
 app.MapDailyRosterEndpoints();
 app.MapAppSessionEndpoints();
 app.MapHub<LiveHub>("/hubs/live");
@@ -97,3 +118,4 @@ if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Databas
 }
 
 await app.RunAsync();
+return 0;

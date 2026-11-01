@@ -188,11 +188,25 @@ public static class UserEndpoints
         user.EmploymentType = form.EmploymentType;
         user.SmsOnly = form.SmsOnly;
         user.IsActive = form.IsActive;
+        MatchRoles(user, (form.Roles ?? []).DistinctBy(r => (r.Role, r.OrgUnitId)).ToList());
+    }
 
-        user.Roles.Clear();
-        user.Roles.AddRange((form.Roles ?? [])
-            .DistinctBy(r => (r.Role, r.OrgUnitId))
-            .Select(r => new RoleAssignment { Role = r.Role, OrgUnitId = r.OrgUnitId, StudioBound = r.StudioBound }));
+    /// <summary>
+    /// Changes only the roles that differ. Replacing them all would work, but the audit log
+    /// would then say every role was taken away and given back on each save.
+    /// </summary>
+    private static void MatchRoles(User user, List<RoleForm> wanted)
+    {
+        user.Roles.RemoveAll(held => !wanted.Any(w => w.Role == held.Role && w.OrgUnitId == held.OrgUnitId));
+
+        foreach (var role in wanted)
+        {
+            var held = user.Roles.FirstOrDefault(r => r.Role == role.Role && r.OrgUnitId == role.OrgUnitId);
+            if (held is null)
+                user.Roles.Add(new RoleAssignment { Role = role.Role, OrgUnitId = role.OrgUnitId, StudioBound = role.StudioBound });
+            else
+                held.StudioBound = role.StudioBound;
+        }
     }
 
     /// <summary>Nobody could then manage people or roles, and only a database change could put that right.</summary>

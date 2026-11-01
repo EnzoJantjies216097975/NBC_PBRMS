@@ -91,6 +91,47 @@ namespace PBRMS.Data.Migrations
                     b.ToTable("AppSessions");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.AuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ItemId")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(4100)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("What")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorId");
+
+                    b.HasIndex("At");
+
+                    b.ToTable("AuditEntries");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.Booking", b =>
                 {
                     b.Property<Guid>("Id")
@@ -744,6 +785,16 @@ namespace PBRMS.Data.Migrations
                     b.Navigation("Requester");
 
                     b.Navigation("SuggestedBy");
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.AuditEntry", b =>
+                {
+                    b.HasOne("PBRMS.Domain.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Actor");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.Booking", b =>

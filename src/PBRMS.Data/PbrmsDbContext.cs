@@ -25,6 +25,7 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<OffRosterWork> OffRosterWork => Set<OffRosterWork>();
     public DbSet<DailyRoster> DailyRosters => Set<DailyRoster>();
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<AppSession> AppSessions => Set<AppSession>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -46,6 +47,19 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
 
             // One PBRMS user per NBC email: sign-in depends on it.
             user.HasIndex(u => u.WorkEmail).IsUnique();
+        });
+
+        modelBuilder.Entity<AuditEntry>(entry =>
+        {
+            entry.Property(a => a.What).HasMaxLength(60);
+            entry.Property(a => a.ItemId).HasMaxLength(80);
+            entry.Property(a => a.Summary).HasMaxLength(4100);
+
+            // Restrict: a person who appears in the log can't be deleted.
+            entry.HasOne(a => a.Actor).WithMany().HasForeignKey(a => a.ActorId).OnDelete(DeleteBehavior.Restrict);
+
+            // The log is read by period, newest first.
+            entry.HasIndex(a => a.At);
         });
 
         modelBuilder.Entity<OrgUnit>(unit =>
