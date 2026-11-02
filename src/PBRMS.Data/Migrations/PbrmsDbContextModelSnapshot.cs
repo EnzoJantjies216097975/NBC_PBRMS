@@ -645,6 +645,9 @@ namespace PBRMS.Data.Migrations
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateOnly?>("RosterReminderSentOn")
+                        .HasColumnType("date");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ParentId");

@@ -39,6 +39,7 @@ builder.Services.AddScoped<CrewProgress>();
 builder.Services.AddScoped<OvertimeWatcher>();
 builder.Services.AddScoped<CrewDeadlineWatcher>();
 builder.Services.AddScoped<ProductionDayWatcher>();
+builder.Services.AddScoped<RosterReminderWatcher>();
 builder.Services.AddScoped<DailyRosterComposer>();
 builder.Services.AddHostedService<MinuteChecksService>();
 

@@ -16,6 +16,9 @@ public class OrgUnit
     public Guid? ParentId { get; set; }
     public OrgUnit? Parent { get; set; }
 
+    /// <summary>The day this division's supervisors were last reminded about a roster, so they're told once a day.</summary>
+    public DateOnly? RosterReminderSentOn { get; set; }
+
     /// <summary>
     /// The unit and every unit above it, e.g. a Content Hub sub-department plus
     /// Content Hub itself. Someone with a role in any of these units covers this unit.

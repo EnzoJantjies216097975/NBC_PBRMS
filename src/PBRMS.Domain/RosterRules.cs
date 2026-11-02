@@ -17,6 +17,25 @@ public record RosterFinding(ClashKind Kind, string Reason, Venue? Studio = null)
 /// </summary>
 public static class RosterRules
 {
+    /// <summary>When supervisors are reminded each day about a roster that's due (TRD, "Roster reminder").</summary>
+    public static readonly TimeOnly ReminderTime = new(8, 0);
+
+    /// <summary>How many days before the end of a month next month's roster falls due.</summary>
+    public const int ReminderDays = 7;
+
+    /// <summary>
+    /// The months that should have a published roster by this date, earliest first: this
+    /// month, and next month from <see cref="ReminderDays"/> days before this one ends.
+    /// This month stays on the list, so a late roster goes on being chased once its month starts.
+    /// </summary>
+    public static List<DateOnly> MonthsDue(DateOnly today)
+    {
+        var thisMonth = new DateOnly(today.Year, today.Month, 1);
+        var nextMonth = thisMonth.AddMonths(1);
+
+        return today >= nextMonth.AddDays(-1 - ReminderDays) ? [thisMonth, nextMonth] : [thisMonth];
+    }
+
     /// <summary>Splits a cell into its codes: "N+ST2" is a night shift plus a Studio 2 shift.</summary>
     public static string[] SplitCodes(string cell) =>
         cell.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

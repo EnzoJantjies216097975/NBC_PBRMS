@@ -199,6 +199,9 @@ A production still running 30 minutes after its booked end counts as overtime. T
 supervisors of its crew divisions are told once.
 The API checks every minute, so on IIS the site must be set to Always Running.
 
+A division's supervisors are reminded at 08h00 from 7 days before month end, once a day, until
+next month's roster is published. A late roster goes on being chased once its month starts.
+
 ## The daily roster
 
 `GET /daily-roster/{yyyy-MM-dd}` builds the sheet fresh each time from confirmed bookings and
