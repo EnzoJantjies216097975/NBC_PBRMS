@@ -25,4 +25,10 @@ public class RoleAssignment
     /// The operator is kept to the building and can't be put on a trip (BR-09).
     /// </summary>
     public bool StudioBound { get; set; }
+
+    /// <summary>Why this operator is sitting out the trip rotation. Empty if they aren't (SRS FR-TRP-03).</summary>
+    public TripSitOutReason? TripSitOutReason { get; set; }
+
+    /// <summary>Their last day sitting out. Past this they're back in by themselves. Empty means until they're put back.</summary>
+    public DateOnly? TripSitOutUntil { get; set; }
 }

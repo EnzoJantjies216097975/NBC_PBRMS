@@ -39,7 +39,8 @@ public record TransitionRequest(BookingAction Action, string? Note, Channel? Cha
 /// </param>
 /// <param name="OverrideReason">
 /// The Booking Officer's reason for filling outside crew while a studio is still short, only if
-/// needed. It's recorded in the booking's history. Other clashes can't be overridden.
+/// needed, or anyone's reason for putting an operator on a trip out of turn, usually the expertise
+/// it calls for. It's recorded in the booking's history. Other clashes can't be overridden.
 /// </param>
 public record CrewRequest(List<CrewChange> Assignments, bool AcknowledgeWarnings = false, string? OverrideReason = null);
 

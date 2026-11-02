@@ -101,7 +101,7 @@ public class RosterTests(TestApi api)
         var trip = await api.AtCrewStageAsync(StartOn(month, 6).AddHours(3), Venue.Location, isTrip: true, "Camera");
 
         Assert.Equal(HttpStatusCode.Conflict, (await api.AssignAsync(studio, "Camera", op, acknowledge: true)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(trip, "Camera", op, acknowledge: true)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await api.AssignAsync(trip, "Camera", op, acknowledge: true, reason: "Out of turn on purpose")).StatusCode);
     }
 
     [Fact]

@@ -154,6 +154,20 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
     public Task<ApiResult<ShiftCode>> ChangeShiftCodeAsync(Guid division, ShiftCode code) =>
         SendAsync<ShiftCode>(HttpMethod.Put, $"shift-definitions/{division}/{code.Id}", code);
 
+    // ---- Trip rotation ----
+
+    public Task<ApiResult<List<TripStanding>>> TripRotationAsync(Guid division) =>
+        GetAsync<List<TripStanding>>($"org-units/{division}/trip-rotation");
+
+    public Task<ApiResult<List<TripStanding>>> SetTripSitOutAsync(Guid division, Guid operatorId, TripSitOutForm form) =>
+        SendAsync<List<TripStanding>>(HttpMethod.Put, $"org-units/{division}/trip-rotation/{operatorId}/sit-out", form);
+
+    public Task<ApiResult<List<TripStanding>>> LogTripAsync(Guid division, Guid operatorId, LoggedTripForm form) =>
+        PostAsync<List<TripStanding>>($"org-units/{division}/trip-rotation/{operatorId}/trips", form);
+
+    public Task<ApiResult<List<TripStanding>>> RemoveLoggedTripAsync(Guid division, Guid operatorId, Guid tripId) =>
+        SendAsync<List<TripStanding>>(HttpMethod.Delete, $"org-units/{division}/trip-rotation/{operatorId}/trips/{tripId}", null);
+
     // ---- Daily roster ----
 
     public Task<ApiResult<DailyRosterView>> DailyRosterAsync(DateOnly date) => GetAsync<DailyRosterView>($"daily-roster/{date:yyyy-MM-dd}");

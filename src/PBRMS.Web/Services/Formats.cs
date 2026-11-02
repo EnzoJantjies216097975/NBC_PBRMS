@@ -12,6 +12,10 @@ public static class Formats
     public static string Hours(DateTimeOffset? start, DateTimeOffset? end) =>
         start is { } from && end is { } to ? $"{Clock(from)}–{Clock(to)}" : "";
 
+    /// <summary>When something runs. The end only gets its date if it's another day, as on a multi-day trip.</summary>
+    public static string Period(DateTimeOffset start, DateTimeOffset end) =>
+        $"{When(start)} to {(NbcTime.DateOf(start) == NbcTime.DateOf(end) ? Clock(end) : When(end))}";
+
     /// <summary>A date and time picked on screen, taken as Windhoek time.</summary>
     public static DateTimeOffset Windhoek(DateTime picked) => new(picked, NbcTime.Offset);
 
@@ -96,9 +100,46 @@ public static class Formats
         _ => "badge"
     };
 
+    /// <summary>A date the way NBC writes it.</summary>
+    public static string Date(DateOnly date) => date.ToString("dd/MM/yyyy");
+
+    /// <summary>Why someone is sitting out the trip rotation, in words.</summary>
+    public static string SitOutReason(TripSitOutReason reason) => reason switch
+    {
+        TripSitOutReason.Family => "Family",
+        TripSitOutReason.School => "School obligations",
+        TripSitOutReason.Other => "Other commitment",
+        _ => reason.ToString()
+    };
+
+    /// <summary>Where someone stands in the rotation, or why they aren't in the queue.</summary>
+    public static string TripStatus(TripStanding person)
+    {
+        if (person.NextTrip is { } next)
+            return $"On a trip from {Date(next)}";
+        if (person.SittingOut is { } reason)
+            return person.SittingOutUntil is { } until ? $"Sitting out until {Date(until)}: {SitOutReason(reason)}" : $"Sitting out: {SitOutReason(reason)}";
+
+        return person.Trips == 0 ? "No trips yet"
+            : person.LastBack is { } back ? $"{TripCount(person.Trips)}, last back {Date(back)}"
+            : TripCount(person.Trips);
+    }
+
+    /// <summary>One person in the crew picker on a trip, with their turn so the fair choice is the obvious one.</summary>
+    public static string TripChoice(TripStanding person)
+    {
+        var turn = person.Place is { } place ? $"{place}. " : "";
+        return $"{turn}{person.Name} ({TripStatus(person)})";
+    }
+
+    public static string TripCount(int trips) => trips == 1 ? "1 trip" : $"{trips} trips";
+
     /// <summary>Who has to do what about a clash, in words.</summary>
     public static string Clash(Clash clash)
     {
+        if (clash.Kind == ClashKind.TripTurn)
+            return $"{clash.Who} is ahead in the trip order ({clash.Title})";
+
         var production = clash.ProductionNo is { } number ? $"#{number} " : "";
         return $"{clash.Who}: {production}{clash.Title} ({Hours(clash.StartsAt, clash.EndsAt)})";
     }

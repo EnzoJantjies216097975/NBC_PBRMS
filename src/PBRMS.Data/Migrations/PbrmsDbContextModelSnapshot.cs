@@ -476,6 +476,44 @@ namespace PBRMS.Data.Migrations
                     b.ToTable("DailyRosterLine");
                 });
 
+            modelBuilder.Entity("PBRMS.Domain.LoggedTrip", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("From")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RecordedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<DateOnly>("To")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperatorId");
+
+                    b.HasIndex("RecordedById");
+
+                    b.ToTable("LoggedTrips");
+                });
+
             modelBuilder.Entity("PBRMS.Domain.MonthlyRoster", b =>
                 {
                     b.Property<Guid>("Id")
@@ -630,6 +668,13 @@ namespace PBRMS.Data.Migrations
 
                     b.Property<bool>("StudioBound")
                         .HasColumnType("bit");
+
+                    b.Property<string>("TripSitOutReason")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateOnly?>("TripSitOutUntil")
+                        .HasColumnType("date");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
@@ -932,6 +977,25 @@ namespace PBRMS.Data.Migrations
                         .HasForeignKey("DailyRosterId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PBRMS.Domain.LoggedTrip", b =>
+                {
+                    b.HasOne("PBRMS.Domain.User", "Operator")
+                        .WithMany()
+                        .HasForeignKey("OperatorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PBRMS.Domain.User", "RecordedBy")
+                        .WithMany()
+                        .HasForeignKey("RecordedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Operator");
+
+                    b.Navigation("RecordedBy");
                 });
 
             modelBuilder.Entity("PBRMS.Domain.MonthlyRoster", b =>

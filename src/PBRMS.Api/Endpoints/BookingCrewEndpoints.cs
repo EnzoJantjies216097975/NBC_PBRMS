@@ -25,7 +25,8 @@ public static class BookingCrewEndpoints
             .RequireAuthorization(p => p.RequireRole(nameof(Role.Supervisor), nameof(Role.BookingOfficer)));
     }
 
-    private static async Task<IResult> AssignCrew(Guid id, CrewRequest request, ClaimsPrincipal principal, [AsParameters] BookingServices services)
+    private static async Task<IResult> AssignCrew(
+        Guid id, CrewRequest request, ClaimsPrincipal principal, [AsParameters] BookingServices services, TripStandings tripStandings)
     {
         var (db, clashChecker, notifier, offRosterLog, studioPrecedence, crewProgress) = services;
 
@@ -51,17 +52,22 @@ public static class BookingCrewEndpoints
         // 2. Lock the operators, then check they're free (see ClashLocks for why in that order).
         var newOperators = changes.Where(c => c.OperatorId is not null).ToList();
         await ClashLocks.TakeAsync(db, newOperators.Select(c => ClashLocks.ForOperator(c.OperatorId!.Value)));
-        var found = await FindClashesAsync(newOperators, booking, clashChecker);
+        var found = await FindClashesAsync(newOperators, booking, clashChecker, tripStandings);
 
-        // The Booking Officer can override "studios first" with a reason, only if needed. They
-        // only reach outside crew at the deadline, so this can't be used any earlier.
-        var overrideReason = caller.Holds(Role.BookingOfficer) ? request.OverrideReason?.Trim() : null;
-        var overriding = !string.IsNullOrEmpty(overrideReason);
+        var overrideReason = request.OverrideReason?.Trim();
+        var gaveReason = !string.IsNullOrEmpty(overrideReason);
         if (overrideReason?.Length > 500)
             return Problems.Invalid("overrideReason", "Keep the reason to 500 characters.");
 
+        // The Booking Officer can override "studios first" with a reason, only if needed. They
+        // only reach outside crew at the deadline, so this can't be used any earlier.
+        var overriding = gaveReason && caller.Holds(Role.BookingOfficer);
+
+        // Whoever decides a trip's crew can go out of turn, but has to say why.
         var blocking = found.Select(f => f.Clash)
-            .Where(c => !c.IsWarning && !(overriding && c.Kind == ClashKind.StudioNeedsCrew))
+            .Where(c => !c.IsWarning
+                        && !(overriding && c.Kind == ClashKind.StudioNeedsCrew)
+                        && !(gaveReason && c.Kind == ClashKind.TripTurn))
             .Distinct()
             .ToList();
         if (blocking.Count > 0)
@@ -78,6 +84,10 @@ public static class BookingCrewEndpoints
 
         if (overriding && found.Any(f => f.Clash.Kind == ClashKind.StudioNeedsCrew))
             await RecordOverrideAsync(notifier, booking, changes, overrideReason!, caller.UserId);
+
+        var passedOver = found.Where(f => f.Clash.Kind == ClashKind.TripTurn).Select(f => f.Clash.Who).Distinct().ToList();
+        if (passedOver.Count > 0)
+            RecordOutOfTurn(booking, passedOver, overrideReason!, caller.UserId);
 
         // 4. Act on the warnings that were acknowledged: take operators off outside
         //    productions, log work outside the roster, and tell the people affected.
@@ -149,14 +159,18 @@ public static class BookingCrewEndpoints
 
     /// <summary>Every clash and warning for the operators being added, with where each one came from.</summary>
     private static async Task<List<(CrewSlot Slot, Guid OperatorId, Clash Clash)>> FindClashesAsync(
-        List<(CrewSlot Slot, Guid? OperatorId)> newOperators, Booking booking, ClashChecker clashChecker)
+        List<(CrewSlot Slot, Guid? OperatorId)> newOperators, Booking booking, ClashChecker clashChecker, TripStandings tripStandings)
     {
         var found = new List<(CrewSlot, Guid, Clash)>();
+        var chosenNow = newOperators.Select(c => c.OperatorId!.Value).ToList();
 
         foreach (var (slot, operatorId) in newOperators)
         {
             var clashes = await clashChecker.ForOperatorAsync(operatorId!.Value, slot.StartsAt, slot.EndsAt, booking);
             clashes.AddRange(await clashChecker.StudiosNeedingCrewAsync(booking, slot));
+            if (booking.IsTrip)
+                clashes.AddRange(await tripStandings.PassedOverAsync(booking, slot, operatorId.Value, chosenNow));
+
             found.AddRange(clashes.Select(clash => (slot, operatorId.Value, clash)));
         }
 
@@ -239,6 +253,17 @@ public static class BookingCrewEndpoints
             $"The Booking Officer crewed #{booking.ProductionNo} {booking.Title} while a studio was still short: {reason}",
             booking.Id);
     }
+
+    /// <summary>Someone went on a trip out of turn: keep who was passed over and why, for anyone who asks later.</summary>
+    private static void RecordOutOfTurn(Booking booking, List<string> passedOver, string reason, Guid actorId) =>
+        booking.History.Add(new BookingStatusChange
+        {
+            FromStatus = booking.Status,
+            ToStatus = booking.Status,
+            ActorId = actorId,
+            Note = $"Trip order passed over {string.Join(", ", passedOver)}: {reason}",
+            At = DateTimeOffset.UtcNow
+        });
 
     /// <summary>Studio bookings are the Booking Officer's to run, so they hear when a supervisor changes the crew.</summary>
     private static async Task TellBookingOfficerAsync(Notifier notifier, Booking booking) =>

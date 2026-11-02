@@ -32,6 +32,10 @@ else
             {
                 <NavLink href="shift-codes">Shift codes</NavLink>
             }
+            @if (Api.Has(Role.Supervisor, Role.BookingOfficer, Role.TvOperationsManager))
+            {
+                <NavLink href="trips">Trip rotation</NavLink>
+            }
             <NavLink href="app-room">APP room</NavLink>
             @if (Api.Has(Role.Supervisor, Role.TvOperationsManager, Role.Management, Role.Admin))
             {

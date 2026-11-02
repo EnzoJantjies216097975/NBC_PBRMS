@@ -1,0 +1,251 @@
+@* The trip rotation: who is owed the next trip in a division, and why. Supervisors keep it
+   right here by logging trips from before PBRMS and marking who is sitting out. The turn
+   itself is worked out in the API, and the crew picker on a trip uses the same order. *@
+@page "/trips"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveUpdates Live
+
+<PageTitle>Trip rotation</PageTitle>
+
+<h1>Trip rotation</h1>
+
+@if (!Api.Has(Role.Supervisor, Role.BookingOfficer, Role.TvOperationsManager))
+{
+    <p>Only supervisors, the Booking Officer and the TV Operations Manager can see this page.</p>
+    return;
+}
+
+<div class="actions">
+    <select value="@division?.Id" @onchange="ChangeDivisionAsync" aria-label="Division">
+        @foreach (var unit in divisions)
+        {
+            <option value="@unit.Id">@unit.Name</option>
+        }
+    </select>
+</div>
+
+<p class="muted">Fewest trips goes first, then whoever has waited longest. Anyone on a trip still to come, or sitting out, waits outside the queue. Operators who can't go on trips aren't listed.</p>
+
+@if (error is not null)
+{
+    <p class="error">@error</p>
+}
+
+@if (loaded && rotation.Count == 0)
+{
+    <p class="muted">There are no operators on this rotation.</p>
+}
+else if (loaded)
+{
+    <table>
+        <thead>
+            <tr><th>Turn</th><th>Operator</th><th>Trips</th><th>Where they stand</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var person in rotation)
+            {
+                <tr>
+                    <td>@person.Place</td>
+                    <td>@person.Name</td>
+                    <td>@person.Trips</td>
+                    <td>@Formats.TripStatus(person)</td>
+                    <td class="row-actions">
+                        <button class="quiet" @onclick="() => Open(person)" aria-label="Open @person.Name">@(MayEdit ? "Manage" : "History")</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (Opened is { } opened)
+{
+    <div class="line-editor">
+        <h2>@opened.Name</h2>
+
+        <h3>Trips</h3>
+        @if (opened.History.Count == 0)
+        {
+            <p class="muted">No trips yet.</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr><th>Trip</th><th>Dates</th><th>Recorded</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var trip in opened.History)
+                    {
+                        <tr>
+                            <td>@trip.Title</td>
+                            <td>@Formats.Date(trip.From)@(trip.To == trip.From ? "" : $" to {Formats.Date(trip.To)}")</td>
+                            <td>@(trip.LoggedId is null ? "Booking" : "Logged by hand")</td>
+                            <td class="row-actions">
+                                @if (MayEdit && trip.LoggedId is { } tripId)
+                                {
+                                    <button class="quiet" @onclick="() => RemoveTripAsync(opened, tripId)" aria-label="Remove @trip.Title">Remove</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (MayEdit)
+        {
+            <h3>Log an earlier trip</h3>
+            <p class="muted">For a trip from before PBRMS, or one nobody was crewed on here.</p>
+            <div class="form">
+                <label>Where to <input @bind="tripTitle" maxlength="160" /></label>
+                <label>From <input type="date" @bind="tripFrom" /></label>
+                <label>To <input type="date" @bind="tripTo" /></label>
+            </div>
+            <div class="actions">
+                <button @onclick="() => LogTripAsync(opened)">Log trip</button>
+            </div>
+
+            <h3>Sitting out</h3>
+            <p class="muted">Sitting out keeps their trips as they are, so they come back in at the right place. Their last day is optional: they come back in by themselves after it.</p>
+            <div class="form">
+                <label>
+                    Reason
+                    <select @bind="sitOutReason">
+                        <option value="">Choose a reason</option>
+                        @foreach (var reason in Enum.GetValues<TripSitOutReason>())
+                        {
+                            <option value="@reason">@Formats.SitOutReason(reason)</option>
+                        }
+                    </select>
+                </label>
+                <label>Last day <input type="date" @bind="sitOutUntil" /></label>
+            </div>
+            <div class="actions">
+                <button @onclick="() => SitOutAsync(opened)">Sit out</button>
+                @if (opened.SittingOut is not null)
+                {
+                    <button class="quiet" @onclick="() => BackInAsync(opened)">Put back in</button>
+                }
+            </div>
+        }
+
+        <div class="actions">
+            <button class="quiet" @onclick="() => openId = null">Close</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<OrgUnitRow> divisions = [];
+    private OrgUnitRow? division;
+    private List<TripStanding> rotation = [];
+    private bool loaded;
+    private string? error;
+
+    // The person open below the table. Kept as an id, because a reload brings in new rows.
+    private Guid? openId;
+    private string tripTitle = "";
+    private DateOnly? tripFrom, tripTo, sitOutUntil;
+    private string sitOutReason = "";
+
+    private TripStanding? Opened => rotation.FirstOrDefault(p => p.OperatorId == openId);
+
+    private bool MayEdit => division is not null && Api.Has(Role.Supervisor, division.Name);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Live.Changed += ReloadAsync;
+
+        var units = (await Api.OrgUnitsAsync()).Value ?? [];
+        var all = units.Where(u => u.Kind == OrgUnitKind.TvOpsDivision).ToList();
+
+        // Supervisors see their own division; the offices that cover them all see every one.
+        divisions = Api.Has(Role.BookingOfficer, Role.TvOperationsManager) ? all : all.Where(u => Api.Has(Role.Supervisor, u.Name)).ToList();
+        division = divisions.FirstOrDefault(u => Api.Has(Role.Supervisor, u.Name)) ?? divisions.FirstOrDefault();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (division is not { } asked)
+            return;
+
+        var result = await Api.TripRotationAsync(asked.Id);
+
+        // Another division may have been picked while this one was loading.
+        if (asked != division)
+            return;
+
+        Show(result);
+        loaded = true;
+    }
+
+    /// <summary>Every change answers with the whole rotation, since one change can move everyone's turn.</summary>
+    private void Show(ApiResult<List<TripStanding>> result)
+    {
+        error = result.Error;
+        rotation = result.Value ?? rotation;
+    }
+
+    private async Task ChangeDivisionAsync(ChangeEventArgs e)
+    {
+        division = divisions.First(u => u.Id == Guid.Parse(e.Value!.ToString()!));
+        openId = null;
+        await LoadAsync();
+    }
+
+    private void Open(TripStanding person)
+    {
+        openId = person.OperatorId;
+        sitOutReason = person.SittingOut?.ToString() ?? "";
+        sitOutUntil = person.SittingOutUntil;
+        (tripTitle, tripFrom, tripTo) = ("", null, null);
+        error = null;
+    }
+
+    private async Task LogTripAsync(TripStanding person)
+    {
+        if (tripFrom is null || tripTo is null)
+        {
+            error = "Say when the trip started and ended.";
+            return;
+        }
+
+        var result = await Api.LogTripAsync(division!.Id, person.OperatorId, new LoggedTripForm(tripTitle, tripFrom.Value, tripTo.Value));
+        Show(result);
+        if (result.Ok)
+            (tripTitle, tripFrom, tripTo) = ("", null, null);
+    }
+
+    private async Task RemoveTripAsync(TripStanding person, Guid tripId) =>
+        Show(await Api.RemoveLoggedTripAsync(division!.Id, person.OperatorId, tripId));
+
+    private async Task SitOutAsync(TripStanding person)
+    {
+        if (!Enum.TryParse<TripSitOutReason>(sitOutReason, out var reason))
+        {
+            error = "Choose a reason.";
+            return;
+        }
+
+        Show(await Api.SetTripSitOutAsync(division!.Id, person.OperatorId, new TripSitOutForm(reason, sitOutUntil)));
+    }
+
+    private async Task BackInAsync(TripStanding person)
+    {
+        var result = await Api.SetTripSitOutAsync(division!.Id, person.OperatorId, new TripSitOutForm(null, null));
+        Show(result);
+        if (result.Ok)
+            (sitOutReason, sitOutUntil) = ("", null);
+    }
+
+    private Task ReloadAsync() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Live.Changed -= ReloadAsync;
+}

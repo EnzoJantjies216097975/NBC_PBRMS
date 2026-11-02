@@ -89,11 +89,12 @@ public static class TestSteps
         return await api.AssignOkAsync(booking, "Camera", await api.NewOperatorAsync("Camera"));
     }
 
-    public static async Task<HttpResponseMessage> AssignAsync(this TestApi api, string email, BookingResponse booking, string division, Guid operatorId, bool acknowledge = false)
+    public static async Task<HttpResponseMessage> AssignAsync(
+        this TestApi api, string email, BookingResponse booking, string division, Guid operatorId, bool acknowledge = false, string? reason = null)
     {
         var client = await api.SignedInClientAsync(email);
         var slot = booking.CrewSlots.Single(s => s.Division == division);
-        return await client.PutAsJsonAsync($"/bookings/{booking.Id}/crew", new CrewRequest([new(slot.Id, operatorId)], acknowledge), Json);
+        return await client.PutAsJsonAsync($"/bookings/{booking.Id}/crew", new CrewRequest([new(slot.Id, operatorId)], acknowledge, reason), Json);
     }
 
     /// <summary>Whoever decides this booking's crew: the Booking Officer for a studio, the Camera or Sound supervisor outside.</summary>
@@ -101,8 +102,8 @@ public static class TestSteps
         booking.CrewLead == Role.BookingOfficer || ClashRules.IsStudio(booking.Venue) ? "booking@pbrms.test"
         : division == "Sound" ? "supervisor.sound@pbrms.test" : "supervisor@pbrms.test";
 
-    public static Task<HttpResponseMessage> AssignAsync(this TestApi api, BookingResponse booking, string division, Guid operatorId, bool acknowledge = false) =>
-        api.AssignAsync(Decider(booking, division), booking, division, operatorId, acknowledge);
+    public static Task<HttpResponseMessage> AssignAsync(this TestApi api, BookingResponse booking, string division, Guid operatorId, bool acknowledge = false, string? reason = null) =>
+        api.AssignAsync(Decider(booking, division), booking, division, operatorId, acknowledge, reason);
 
     public static Task<BookingResponse> AssignOkAsync(this TestApi api, BookingResponse booking, string division, Guid operatorId) =>
         api.AssignOkAsync(Decider(booking, division), booking, division, operatorId);

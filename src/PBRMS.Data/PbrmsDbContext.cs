@@ -27,6 +27,7 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
     public DbSet<DailyRoster> DailyRosters => Set<DailyRoster>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<AppSession> AppSessions => Set<AppSession>();
+    public DbSet<LoggedTrip> LoggedTrips => Set<LoggedTrip>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -244,6 +245,13 @@ public class PbrmsDbContext(DbContextOptions<PbrmsDbContext> options) : DbContex
 
             // For the clash check.
             session.HasIndex(s => new { s.OperatorId, s.StartsAt });
+        });
+
+        modelBuilder.Entity<LoggedTrip>(trip =>
+        {
+            trip.Property(t => t.Title).HasMaxLength(160);
+            trip.HasOne(t => t.Operator).WithMany().HasForeignKey(t => t.OperatorId).OnDelete(DeleteBehavior.Restrict);
+            trip.HasOne(t => t.RecordedBy).WithMany().HasForeignKey(t => t.RecordedById).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

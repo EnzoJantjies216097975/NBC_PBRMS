@@ -34,7 +34,13 @@ public enum ClashKind
     TakeFromOutside,
 
     /// <summary>A studio production at that time is still short of this division's crew. Studios are filled first, so outside crew has to wait.</summary>
-    StudioNeedsCrew
+    StudioNeedsCrew,
+
+    /// <summary>
+    /// Someone free is ahead of this operator in the trip rotation (BR-10). Going out of turn
+    /// needs a reason, usually the expertise the trip calls for. <c>Who</c> is the person passed over.
+    /// </summary>
+    TripTurn
 }
 
 /// <summary>

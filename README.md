@@ -62,6 +62,9 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `PUT /bookings/{id}/schedule` | The Booking Officer moves a booking at Finalisation to another studio or time |
 | `GET /org-units/{id}/operators` | Active operators in a division, by name, for the crew picker and the monthly roster |
 | `GET /operators/{id}/conflicts?from=&to=` | Why an operator can't work a period: other productions, and the published roster |
+| `GET /org-units/{id}/trip-rotation` | A division's trip queue, next in turn first (its supervisor, the Booking Officer, the TV Operations Manager) |
+| `PUT .../trip-rotation/{operatorId}/sit-out` | Take an operator out of the queue with a reason and optional last day, or put them back with no reason (its supervisor) |
+| `POST .../trip-rotation/{operatorId}/trips`, `DELETE .../trips/{tripId}` | Log a trip from before PBRMS, or take one off as a mistake (its supervisor) |
 | `GET /shift-definitions/{divisionId}` | A division's legend of shift codes |
 | `POST /shift-definitions/{divisionId}`, `PUT .../{id}` | Add or change a code (the division's supervisor or an Admin). Retire one with `isActive: false`. |
 | `GET /rosters/{divisionId}/{yyyy-MM}` | The newest version for the division's supervisor and the Booking Officer. Everyone else gets what's published. |
@@ -128,6 +131,10 @@ Only an Admin can add people, so the first one is set up from the server:
    It refuses if NBC already has an active Admin, so it can't be used to give anyone access later.
 3. That person signs in and adds the departments, divisions and everyone else under Departments and People.
    Each division's supervisor then adds its shift codes.
+
+Give SQL Server memory of its own. If the machine runs short, Windows takes it back and SQL Server
+makes large reads queue for about 25 seconds at a time: the audit log and the minute checks slow
+down, with no error. Set `min server memory` so that can't happen, especially if IIS shares the machine.
 
 The same command also updates the database after a new version is installed. It then says NBC
 already has an Admin, which is expected: the update has still been done.
@@ -244,6 +251,28 @@ for which production, until when, and when the next session starts. Open screens
 A confirmed session counts as the operator being busy, and shows on the daily roster.
 `GET /reports/app-usage?from=&to=` shows supervisors, the TV Operations Manager and Admin which
 productions, editors and producers used APP.
+
+## Trip rotation
+
+Trips are shared out in turn within each division (BR-10). The rule is in `TripRotation`, and
+the crew picker and the Trip rotation page show the same order.
+
+| Who | Where they stand |
+| --- | --- |
+| Fewest trips | First in the queue |
+| Same number of trips | Whoever has never been out, then whoever has waited longest, then by name |
+| On a trip still to come | Out of the queue |
+| Sitting out, with a reason | Out of the queue, with their trips untouched. Lapses after their last day |
+| Marked "Can't go on trips" | Not on the rotation (BR-09) |
+
+Choosing someone other than the next in turn comes back as a `TripTurn` clash naming who was
+passed over. Sending it again with `overrideReason` goes ahead and keeps the reason in the
+booking's history. Someone on leave or on another production at that time doesn't count as
+passed over, because they couldn't have gone. A day off does count, because off days can be worked.
+
+A trip counts once however many positions someone holds on it. Cancelling it gives their turn
+back, and one that ended without ever being confirmed never counted. Supervisors log trips from
+before PBRMS by hand, so the rotation doesn't start everyone at zero.
 
 ## Live updates
 

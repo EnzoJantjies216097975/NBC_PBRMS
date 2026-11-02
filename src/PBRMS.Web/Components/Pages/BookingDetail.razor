@@ -18,7 +18,7 @@ else
         <span class="@Formats.StatusClass(booking.Status)">@Formats.Status(booking.Status)</span>
         <span class="muted">@booking.Department, @booking.Producer</span>
     </p>
-    <p>@Formats.When(booking.StartsAt) to @Formats.Clock(booking.EndsAt), @Formats.Venue(booking.Venue) @booking.VenueText</p>
+    <p>@Formats.Period(booking.StartsAt, booking.EndsAt), @Formats.Venue(booking.Venue) @booking.VenueText</p>
 
     @if (booking.DepartureMissedAt is not null)
     {
@@ -53,7 +53,7 @@ else
                                 <option value="">Choose…</option>
                                 @foreach (var person in operators)
                                 {
-                                    <option value="@person.Id" selected="@(slot.OperatorId == person.Id)">@person.Name</option>
+                                    <option value="@person.Id" selected="@(slot.OperatorId == person.Id)">@person.Label</option>
                                 }
                             </select>
                         }
@@ -96,6 +96,11 @@ else
         </tbody>
     </table>
 
+    @if (canChooseCrew && booking.IsTrip)
+    {
+        <p class="muted">Operators are listed in turn. Going out of turn needs a reason. <a href="trips">See the trip rotation</a></p>
+    }
+
     @if (chosen.Count > 0)
     {
         <p><button @onclick="() => SaveCrewAsync(false)">Save crew</button></p>
@@ -118,10 +123,13 @@ else
             {
                 <button @onclick="GoAheadAsync">Go ahead anyway</button>
             }
-            @if (canOverrideStudios)
+            @if (canOverride)
             {
-                <p><input @bind="reason" placeholder="Why this can't wait" /></p>
-                <button @onclick="() => SaveCrewAsync(false)">Override with this reason</button>
+                <div class="actions">
+                    <input class="wide" @bind="reason" maxlength="500" aria-label="Reason"
+                           placeholder="@(clashes.Any(c => c.Kind == ClashKind.TripTurn) ? "What expertise this trip needs, or why else" : "Why this can't wait")" />
+                    <button @onclick="() => SaveCrewAsync(false)">Override with this reason</button>
+                </div>
             }
         </div>
     }
@@ -198,14 +206,14 @@ else
     [Parameter] public Guid Id { get; set; }
 
     private BookingResponse? booking;
-    private readonly Dictionary<Guid, List<OperatorRow>> pickers = [];
+    private readonly Dictionary<Guid, List<(Guid Id, string Label)>> pickers = [];
     private readonly Dictionary<Guid, Guid?> chosen = [];
     private bool canChooseCrew;
     private string? error, note, reason;
     private string channel = "";
     private List<Clash> clashes = [];
     private Func<Task>? warningFor;
-    private bool canOverrideStudios;
+    private bool canOverride;
 
     // The producer works this booking on the day: everyone else just sees how it's going.
     private bool isProducer => booking?.ProducerId == Api.Me?.Id;
@@ -230,11 +238,25 @@ else
         canChooseCrew = booking.Status is BookingStatus.CrewAssignment or BookingStatus.Finalisation or BookingStatus.Confirmed
                         && Api.Has(Role.Supervisor, Role.BookingOfficer);
 
-        if (canChooseCrew)
+        if (!canChooseCrew)
+            return;
+
+        foreach (var division in booking.CrewSlots.Select(s => s.DivisionId).Distinct())
         {
-            foreach (var division in booking.CrewSlots.Select(s => s.DivisionId).Distinct().Where(d => !pickers.ContainsKey(d)))
-                pickers[division] = (await Api.OperatorsAsync(division)).Value ?? [];
+            if (booking.IsTrip)
+                await LoadTripPickerAsync(division);
+            else if (!pickers.ContainsKey(division))
+                pickers[division] = ((await Api.OperatorsAsync(division)).Value ?? []).Select(o => (o.Id, o.Name)).ToList();
         }
+    }
+
+    // Read every time, because each trip filled moves everyone's turn. A supervisor of another
+    // division can't see this one's rotation, and can't crew it either, so they get no picker.
+    private async Task LoadTripPickerAsync(Guid division)
+    {
+        var rotation = (await Api.TripRotationAsync(division)).Value;
+        if (rotation is not null)
+            pickers[division] = rotation.Select(s => (s.OperatorId, Formats.TripChoice(s))).ToList();
     }
 
     private void Choose(Guid slotId, string? value) =>
@@ -269,10 +291,9 @@ else
         error = result.Error;
         clashes = result.Clashes;
         warningFor = result.NeedsAcknowledgement ? ifAcknowledged : null;
-        canOverrideStudios = !result.Ok
-                             && Api.Has(Role.BookingOfficer)
-                             && clashes.Count > 0
-                             && clashes.All(c => c.Kind == ClashKind.StudioNeedsCrew);
+        canOverride = !result.Ok
+                      && clashes.Count > 0
+                      && clashes.All(c => c.Kind == ClashKind.TripTurn || (c.Kind == ClashKind.StudioNeedsCrew && Api.Has(Role.BookingOfficer)));
 
         if (!result.Ok)
             return;
