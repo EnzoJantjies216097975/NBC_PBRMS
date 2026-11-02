@@ -166,8 +166,17 @@ namespace PBRMS.Data.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<DateTimeOffset?>("CrewCalledAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DepartedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<Guid>("DepartmentId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DepartureMissedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset>("EndsAt")
                         .HasColumnType("datetimeoffset");
@@ -290,6 +299,9 @@ namespace PBRMS.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("ArrivedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset>("AssignedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -303,6 +315,9 @@ namespace PBRMS.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("SignalledAt")
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");

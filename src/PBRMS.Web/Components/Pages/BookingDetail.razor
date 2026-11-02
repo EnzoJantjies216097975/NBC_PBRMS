@@ -20,9 +20,26 @@ else
     </p>
     <p>@Formats.When(booking.StartsAt) to @Formats.Clock(booking.EndsAt), @Formats.Venue(booking.Venue) @booking.VenueText</p>
 
+    @if (booking.DepartureMissedAt is not null)
+    {
+        <p class="problem">Nobody has confirmed this shoot left. Phone the producer: if it didn't go, cancel the booking to release its crew.</p>
+    }
+    @if (booking.DepartedAt is { } left)
+    {
+        <p class="muted">Left at @Formats.Clock(left)</p>
+    }
+
     <h2>Crew</h2>
     <table>
-        <thead><tr><th>Position</th><th>Division</th><th>Operator</th></tr></thead>
+        <thead>
+            <tr>
+                <th>Position</th><th>Division</th><th>Operator</th>
+                @if (isOnTheDay)
+                {
+                    <th>On the day</th>
+                }
+            </tr>
+        </thead>
         <tbody>
             @foreach (var slot in booking.CrewSlots)
             {
@@ -49,6 +66,31 @@ else
                             <span class="muted"> @slot.OperatorPhone</span>
                         }
                     </td>
+                    @if (isOnTheDay)
+                    {
+                        <td class="on-the-day">
+                            @if (slot.ArrivedAt is { } arrived)
+                            {
+                                <span class="badge good">Arrived @Formats.Clock(arrived)</span>
+                                @if (isProducer)
+                                {
+                                    <button class="quiet" @onclick="() => MarkArrivalAsync(slot.Id, false)" aria-label="Undo arrival of @slot.Operator">Undo</button>
+                                }
+                            }
+                            else
+                            {
+                                @if (isProducer)
+                                {
+                                    <button @onclick="() => MarkArrivalAsync(slot.Id, true)" aria-label="Mark @slot.Operator as arrived">Arrived</button>
+                                    <button class="danger" @onclick="() => SignalAsync(slot.Id)" aria-label="Signal @slot.Operator">Signal</button>
+                                }
+                                @if (slot.SignalledAt is { } signalled)
+                                {
+                                    <span class="badge wait">Signalled @Formats.Clock(signalled)</span>
+                                }
+                            }
+                        </td>
+                    }
                 </tr>
             }
         </tbody>
@@ -110,6 +152,10 @@ else
         {
             <button @onclick="() => MoveAsync(BookingAction.Approve)">Confirm</button>
         }
+        @if (booking.Status == BookingStatus.Confirmed && isProducer && booking.LeavesTheBuilding && booking.DepartedAt is null)
+        {
+            <button class="quiet" @onclick="MarkDepartedAsync">Crew has left</button>
+        }
         @if (booking.Status == BookingStatus.Confirmed && Api.Me!.Id == booking.ProducerId)
         {
             <button @onclick="() => MoveAsync(BookingAction.Start)">Production has started</button>
@@ -123,7 +169,7 @@ else
     @if (booking.Status is not (BookingStatus.Completed or BookingStatus.Cancelled))
     {
         <div class="actions">
-            <input @bind="note" placeholder="Reason, to send back or cancel" />
+            <input class="wide" @bind="note" placeholder="Reason, to send back or cancel" />
             @if (booking.Status is BookingStatus.EpReview or BookingStatus.CrewAssignment)
             {
                 <button class="quiet" @onclick="() => MoveAsync(BookingAction.SendBack)">Send back</button>
@@ -160,6 +206,10 @@ else
     private List<Clash> clashes = [];
     private Func<Task>? warningFor;
     private bool canOverrideStudios;
+
+    // The producer works this booking on the day: everyone else just sees how it's going.
+    private bool isProducer => booking?.ProducerId == Api.Me?.Id;
+    private bool isOnTheDay => booking?.Status is BookingStatus.Confirmed or BookingStatus.InProgress;
 
     protected override async Task OnInitializedAsync()
     {
@@ -204,6 +254,12 @@ else
     }
 
     private async Task AllowLateAsync() => Show(await Api.AllowLateAsync(Id, note ?? ""), null);
+
+    private async Task MarkArrivalAsync(Guid slotId, bool arrived) => Show(await Api.MarkArrivalAsync(Id, slotId, arrived), null);
+
+    private async Task SignalAsync(Guid slotId) => Show(await Api.SignalAsync(Id, slotId), null);
+
+    private async Task MarkDepartedAsync() => Show(await Api.MarkDepartedAsync(Id), null);
 
     private Task GoAheadAsync() => warningFor?.Invoke() ?? Task.CompletedTask;
 

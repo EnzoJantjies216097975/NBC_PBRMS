@@ -167,6 +167,8 @@ th { background: #EFEDE5; font-size: 13px; }
 .line-editor { padding: 12px; background: var(--paper); border-left: 4px solid var(--brand); }
 .line-editor h3 { margin: 14px 0 4px; font-size: 13px; }
 
+td.on-the-day button { min-height: 28px; padding: 2px 8px; margin-right: 4px; }
+
 /* Reports. */
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }

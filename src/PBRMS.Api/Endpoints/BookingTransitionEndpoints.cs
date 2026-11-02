@@ -49,6 +49,7 @@ public static class BookingTransitionEndpoints
 
         // 3. What this particular step records.
         var now = DateTimeOffset.UtcNow;
+        var wasConfirmed = booking.Status is BookingStatus.Confirmed or BookingStatus.InProgress;
         RecordStepDetails(booking, request, now);
 
         // 4. Record the change and save. Every change goes into the history (TR-03).
@@ -76,6 +77,14 @@ public static class BookingTransitionEndpoints
         if (newStatus == BookingStatus.Confirmed)
             await services.Notifier.TellConfirmedAsync(booking, departmentChain);
 
+        // The crew only hear about a booking once it's confirmed, so that's when they need
+        // telling it's off. Otherwise someone turns up for a production that isn't happening.
+        if (newStatus == BookingStatus.Cancelled && wasConfirmed)
+            services.Notifier.Send(
+                booking.CrewSlots.Where(s => s.Current is not null).Select(s => s.Current!.OperatorId).Append(booking.ProducerId),
+                $"#{booking.ProductionNo} {booking.Title} ({NbcTime.Text(booking.StartsAt)}) has been cancelled: {note}",
+                booking.Id);
+
         try
         {
             await db.SaveChangesAsync();
@@ -99,7 +108,7 @@ public static class BookingTransitionEndpoints
             if (!BookingWorkflow.CanBeCancelled(booking.Status))
                 return (booking.Status, Problems.Conflict($"A booking that is {booking.Status} can't be cancelled."));
             if (!BookingWorkflow.MayCancel(booking, caller.UserId, caller.Roles, departmentChain))
-                return (booking.Status, Problems.Forbidden("Only the booking's producer, its department's EP, the Booking Officer or an Admin can cancel it."));
+                return (booking.Status, Problems.Forbidden("Only the booking's producer, its department's EP, the Booking Officer or an Admin can cancel it. Its supervisors can too, if it's flagged as never having left."));
             return (BookingStatus.Cancelled, null);
         }
 

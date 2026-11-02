@@ -243,7 +243,205 @@ public class ProductionDayTests(TestApi api)
         Assert.NotNull((await api.NotificationsAsync(OperatorEmail(op))).First(n => n.Id == mine.Id).ReadAt);
     }
 
+    [Fact]
+    public async Task The_crew_and_producer_are_called_once_an_hour_before_the_start()
+    {
+        var op = await api.NewOperatorAsync("Camera");
+        var booking = await ConfirmedAsync(op);
+
+        await CheckTheDayAtAsync(booking.StartsAt.AddMinutes(-61));
+        Assert.Empty(await CallsAsync(OperatorEmail(op), booking));
+
+        await CheckTheDayAtAsync(booking.StartsAt.AddMinutes(-60));
+        await CheckTheDayAtAsync(booking.StartsAt.AddMinutes(-30));
+
+        Assert.Single(await CallsAsync(OperatorEmail(op), booking));
+        Assert.Single(await CallsAsync(Producer, booking));
+    }
+
+    [Fact]
+    public async Task The_producer_marks_who_has_arrived_and_can_undo_a_mistake()
+    {
+        var booking = await ConfirmedAsync(await api.NewOperatorAsync("Camera"));
+        var producer = await api.SignedInClientAsync(Producer);
+        var slot = booking.CrewSlots[0].Id;
+
+        var arrived = await ReadAsync(await producer.PostAsJsonAsync($"/bookings/{booking.Id}/attendance", new AttendanceRequest(slot, true), Json));
+        Assert.NotNull(arrived.CrewSlots[0].ArrivedAt);
+
+        var undone = await ReadAsync(await producer.PostAsJsonAsync($"/bookings/{booking.Id}/attendance", new AttendanceRequest(slot, false), Json));
+        Assert.Null(undone.CrewSlots[0].ArrivedAt);
+    }
+
+    [Fact]
+    public async Task Attendance_is_the_producers_and_only_on_a_confirmed_production()
+    {
+        var unconfirmed = await api.AtFinalisationAsync(NewDay(), Venue.Studio3);
+        var confirmed = await ConfirmedAsync(await api.NewOperatorAsync("Camera"));
+        var producer = await api.SignedInClientAsync(Producer);
+        var bookingOfficer = await api.SignedInClientAsync(BookingOfficer);
+
+        var tooEarly = await producer.PostAsJsonAsync($"/bookings/{unconfirmed.Id}/attendance", new AttendanceRequest(unconfirmed.CrewSlots[0].Id, true), Json);
+        var notTheirs = await bookingOfficer.PostAsJsonAsync($"/bookings/{confirmed.Id}/attendance", new AttendanceRequest(confirmed.CrewSlots[0].Id, true), Json);
+
+        Assert.Equal(HttpStatusCode.Conflict, tooEarly.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, notTheirs.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_signal_reaches_the_operator_who_hasnt_arrived_and_is_recorded()
+    {
+        var op = await api.NewOperatorAsync("Camera");
+        var booking = await ConfirmedAsync(op);
+        var producer = await api.SignedInClientAsync(Producer);
+
+        var signalled = await ReadAsync(await producer.PostAsJsonAsync($"/bookings/{booking.Id}/signal", new SignalRequest(booking.CrewSlots[0].Id), Json));
+
+        Assert.NotNull(signalled.CrewSlots[0].SignalledAt);
+        Assert.Contains(await api.NotificationsAsync(OperatorEmail(op)), n => n.BookingId == booking.Id && n.Text.StartsWith("URGENT"));
+    }
+
+    [Fact]
+    public async Task Someone_who_has_arrived_cant_be_signalled()
+    {
+        var booking = await ConfirmedAsync(await api.NewOperatorAsync("Camera"));
+        var producer = await api.SignedInClientAsync(Producer);
+        var slot = booking.CrewSlots[0].Id;
+        await producer.PostAsJsonAsync($"/bookings/{booking.Id}/attendance", new AttendanceRequest(slot, true), Json);
+
+        var response = await producer.PostAsJsonAsync($"/bookings/{booking.Id}/signal", new SignalRequest(slot), Json);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_producer_confirms_a_location_shoot_has_left_and_it_isnt_flagged()
+    {
+        var booking = await ConfirmedShootAsync();
+        var producer = await api.SignedInClientAsync(Producer);
+
+        var left = await ReadAsync(await producer.PostAsync($"/bookings/{booking.Id}/departure", null));
+        await CheckTheDayAtAsync(booking.StartsAt.AddHours(3));
+
+        Assert.NotNull(left.DepartedAt);
+        Assert.Empty(await NeverLeftAlertsAsync(Supervisor, booking));
+    }
+
+    [Fact]
+    public async Task A_studio_production_doesnt_leave()
+    {
+        var booking = await ConfirmedAsync(await api.NewOperatorAsync("Camera"));
+        var producer = await api.SignedInClientAsync(Producer);
+
+        Assert.Equal(HttpStatusCode.Conflict, (await producer.PostAsync($"/bookings/{booking.Id}/departure", null)).StatusCode);
+
+        await CheckTheDayAtAsync(booking.StartsAt.AddHours(3));
+        Assert.Empty(await NeverLeftAlertsAsync(Supervisor, booking));
+    }
+
+    [Fact]
+    public async Task Supervisors_and_the_producer_are_told_once_when_a_shoot_never_left()
+    {
+        var booking = await ConfirmedShootAsync();
+
+        await CheckTheDayAtAsync(booking.StartsAt.AddMinutes(119));
+        Assert.Empty(await NeverLeftAlertsAsync(Supervisor, booking));
+
+        await CheckTheDayAtAsync(booking.StartsAt.AddHours(2));
+        await CheckTheDayAtAsync(booking.StartsAt.AddHours(3));
+
+        Assert.Single(await NeverLeftAlertsAsync(Supervisor, booking));
+        Assert.Single(await NeverLeftAlertsAsync(Producer, booking));
+        Assert.NotNull((await LoadAsync(booking)).DepartureMissedAt);
+    }
+
+    [Fact]
+    public async Task A_shoot_the_producer_marked_as_started_has_clearly_left()
+    {
+        var booking = await ConfirmedShootAsync();
+        await api.TransitionAsync(Producer, booking.Id, BookingAction.Start);
+
+        await CheckTheDayAtAsync(booking.StartsAt.AddHours(3));
+
+        Assert.Empty(await NeverLeftAlertsAsync(Supervisor, booking));
+    }
+
+    [Fact]
+    public async Task Confirming_late_that_a_flagged_shoot_left_clears_the_flag_and_tells_the_supervisors()
+    {
+        var booking = await ConfirmedShootAsync();
+        await CheckTheDayAtAsync(booking.StartsAt.AddHours(2));
+        var producer = await api.SignedInClientAsync(Producer);
+
+        var left = await ReadAsync(await producer.PostAsync($"/bookings/{booking.Id}/departure", null));
+
+        Assert.Null(left.DepartureMissedAt);
+        Assert.Contains(await api.NotificationsAsync(Supervisor), n => n.BookingId == booking.Id && n.Text.Contains("has left after all"));
+    }
+
+    [Fact]
+    public async Task The_supervisor_can_release_the_crew_of_a_flagged_shoot_but_not_before_it_is_flagged()
+    {
+        var op = await api.NewOperatorAsync("Camera");
+        var booking = await ConfirmedShootAsync(op);
+        var supervisor = await api.SignedInClientAsync(Supervisor);
+        var otherDivision = await api.SignedInClientAsync("supervisor.sound@pbrms.test");
+        var cancel = new TransitionRequest(BookingAction.Cancel, "Never left", null, null);
+
+        var tooEarly = await supervisor.PostAsJsonAsync($"/bookings/{booking.Id}/transition", cancel, Json);
+        await CheckTheDayAtAsync(booking.StartsAt.AddHours(2));
+        var notTheirs = await otherDivision.PostAsJsonAsync($"/bookings/{booking.Id}/transition", cancel, Json);
+        var released = await supervisor.PostAsJsonAsync($"/bookings/{booking.Id}/transition", cancel, Json);
+
+        Assert.Equal(HttpStatusCode.Forbidden, tooEarly.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, notTheirs.StatusCode);
+        Assert.Equal(BookingStatus.Cancelled, (await ReadAsync(released)).Status);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_confirmed_production_tells_its_crew_and_producer()
+    {
+        var op = await api.NewOperatorAsync("Camera");
+        var booking = await ConfirmedAsync(op);
+
+        await api.TransitionAsync(BookingOfficer, booking.Id, BookingAction.Cancel, "Presenter ill");
+
+        Assert.Contains(await api.NotificationsAsync(OperatorEmail(op)), n => n.BookingId == booking.Id && n.Text.Contains("has been cancelled") && n.Text.Contains("Presenter ill"));
+        Assert.Contains(await api.NotificationsAsync(Producer), n => n.BookingId == booking.Id && n.Text.Contains("has been cancelled"));
+    }
+
     // ---- Helpers ----
+
+    /// <summary>A location shoot on a day of its own, confirmed by its Camera supervisor.</summary>
+    private async Task<BookingResponse> ConfirmedShootAsync(Guid? operatorId = null)
+    {
+        var booking = await api.AtCrewStageAsync(NewDay(), Venue.Location, "Camera");
+        return await api.AssignOkAsync(booking, "Camera", operatorId ?? await api.NewOperatorAsync("Camera"));
+    }
+
+    private static async Task<BookingResponse> ReadAsync(HttpResponseMessage response)
+    {
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        return (await response.Content.ReadFromJsonAsync<BookingResponse>(Json))!;
+    }
+
+    private async Task<BookingResponse> LoadAsync(BookingResponse booking)
+    {
+        var producer = await api.SignedInClientAsync(Producer);
+        return (await producer.GetFromJsonAsync<BookingResponse>($"/bookings/{booking.Id}", Json))!;
+    }
+
+    private async Task CheckTheDayAtAsync(DateTimeOffset now)
+    {
+        using var scope = api.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ProductionDayWatcher>().CheckAsync(now);
+    }
+
+    private async Task<List<NotificationEndpoints.NotificationResponse>> CallsAsync(string email, BookingResponse booking) =>
+        (await api.NotificationsAsync(email)).Where(n => n.BookingId == booking.Id && n.Text.StartsWith("Call:")).ToList();
+
+    private async Task<List<NotificationEndpoints.NotificationResponse>> NeverLeftAlertsAsync(string email, BookingResponse booking) =>
+        (await api.NotificationsAsync(email)).Where(n => n.BookingId == booking.Id && n.Text.Contains("hasn't been confirmed as leaving")).ToList();
 
     /// <summary>A confirmed booking on a day of its own, in a studio, with this operator on its one Camera slot.</summary>
     private async Task<BookingResponse> ConfirmedAsync(Guid operatorId)

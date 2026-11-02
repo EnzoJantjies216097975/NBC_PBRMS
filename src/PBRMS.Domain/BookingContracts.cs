@@ -43,6 +43,12 @@ public record TransitionRequest(BookingAction Action, string? Note, Channel? Cha
 /// </param>
 public record CrewRequest(List<CrewChange> Assignments, bool AcknowledgeWarnings = false, string? OverrideReason = null);
 
+/// <summary>The producer marks whether the operator on this position has arrived.</summary>
+public record AttendanceRequest(Guid SlotId, bool Arrived);
+
+/// <summary>The producer urgently signals the operator on this position, who hasn't arrived.</summary>
+public record SignalRequest(Guid SlotId);
+
 /// <summary>Why the Booking Officer is making an exception.</summary>
 public record OverrideRequest(string? Reason);
 
@@ -78,7 +84,10 @@ public record BookingResponse(
     string? Notes,
     List<CrewSlotResponse> CrewSlots,
     List<StatusChangeResponse> History,
-    Role? CrewLead)
+    Role? CrewLead,
+    bool LeavesTheBuilding,
+    DateTimeOffset? DepartedAt,
+    DateTimeOffset? DepartureMissedAt)
 {
     /// <summary>Builds the response from a booking loaded with its crew, producer and history.</summary>
     public static BookingResponse From(Booking b) => new(
@@ -95,13 +104,18 @@ public record BookingResponse(
                 s.Current?.OperatorId,
                 s.Current is null ? null : $"{s.Current.Operator.FirstName} {s.Current.Operator.Surname}",
                 // Phone numbers only once the crew is final: the producer's confirmed crew list (E1-03).
-                b.Status is BookingStatus.Confirmed or BookingStatus.InProgress ? s.Current?.Operator.Phone : null))
+                b.Status is BookingStatus.Confirmed or BookingStatus.InProgress ? s.Current?.Operator.Phone : null,
+                s.Current?.ArrivedAt,
+                s.Current?.SignalledAt))
             .ToList(),
         b.History
             .OrderBy(h => h.At)
             .Select(h => new StatusChangeResponse(h.FromStatus, h.ToStatus, $"{h.Actor.FirstName} {h.Actor.Surname}", h.Note, h.At))
             .ToList(),
-        b.Status == BookingStatus.CrewAssignment ? BookingWorkflow.CrewLead(b.Venue) : null);
+        b.Status == BookingStatus.CrewAssignment ? BookingWorkflow.CrewLead(b.Venue) : null,
+        BookingWorkflow.LeavesTheBuilding(b),
+        b.DepartedAt,
+        b.DepartureMissedAt);
 }
 
 /// <summary>A crew position and who is on it. The operator fields are null while it is empty.</summary>
@@ -115,7 +129,9 @@ public record CrewSlotResponse(
     string? SpecialEquipment,
     Guid? OperatorId,
     string? Operator,
-    string? OperatorPhone);
+    string? OperatorPhone,
+    DateTimeOffset? ArrivedAt,
+    DateTimeOffset? SignalledAt);
 
 public record StatusChangeResponse(BookingStatus From, BookingStatus To, string By, string? Note, DateTimeOffset At);
 

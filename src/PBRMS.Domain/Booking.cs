@@ -80,6 +80,18 @@ public class Booking
     /// <summary>When people were told it had gone overtime, so they are told only once.</summary>
     public DateTimeOffset? OvertimeNotifiedAt { get; set; }
 
+    /// <summary>When the crew and producer got the call before the start, so they get it only once.</summary>
+    public DateTimeOffset? CrewCalledAt { get; set; }
+
+    /// <summary>When the producer confirmed a shoot had left the building.</summary>
+    public DateTimeOffset? DepartedAt { get; set; }
+
+    /// <summary>
+    /// When a shoot was flagged for not being confirmed as leaving (BR-11). Empty once the
+    /// producer confirms it did leave.
+    /// </summary>
+    public DateTimeOffset? DepartureMissedAt { get; set; }
+
     /// <summary>Every status change, oldest first: who did it, when, and why (TR-03).</summary>
     public List<BookingStatusChange> History { get; set; } = [];
 

@@ -122,6 +122,15 @@ public class ApiClient(HttpClient http, ProtectedSessionStorage storage, LiveUpd
     public Task<ApiResult<BookingResponse>> SaveCrewAsync(Guid id, CrewRequest request) =>
         SendAsync<BookingResponse>(HttpMethod.Put, $"bookings/{id}/crew", request);
 
+    public Task<ApiResult<BookingResponse>> MarkArrivalAsync(Guid id, Guid slotId, bool arrived) =>
+        PostAsync<BookingResponse>($"bookings/{id}/attendance", new AttendanceRequest(slotId, arrived));
+
+    public Task<ApiResult<BookingResponse>> SignalAsync(Guid id, Guid slotId) =>
+        PostAsync<BookingResponse>($"bookings/{id}/signal", new SignalRequest(slotId));
+
+    public Task<ApiResult<BookingResponse>> MarkDepartedAsync(Guid id) =>
+        PostAsync<BookingResponse>($"bookings/{id}/departure", null);
+
     // ---- Monthly roster and shift codes ----
 
     public Task<ApiResult<RosterView>> RosterAsync(Guid division, string month) =>

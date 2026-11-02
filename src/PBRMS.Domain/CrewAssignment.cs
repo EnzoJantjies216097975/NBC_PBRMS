@@ -28,4 +28,10 @@ public class CrewAssignment
 
     /// <summary>When this operator was taken off the slot. Null while they are on it.</summary>
     public DateTimeOffset? RemovedAt { get; set; }
+
+    /// <summary>When the producer confirmed they had arrived on the day.</summary>
+    public DateTimeOffset? ArrivedAt { get; set; }
+
+    /// <summary>When the producer last signalled them for not having arrived.</summary>
+    public DateTimeOffset? SignalledAt { get; set; }
 }

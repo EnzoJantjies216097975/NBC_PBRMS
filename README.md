@@ -52,6 +52,9 @@ people (`src/PBRMS.Data/DevSeed.cs`). Then open `src/PBRMS.Api/PBRMS.Api.http` t
 | `POST /bookings/{id}/transition` | `{ "action": "...", "note": "..." }`. Actions: Submit, Approve, SendBack, Start, End, Cancel. |
 | `GET /reports/off-roster-work?from=&to=` | Who was booked on a day off or outside their shift. The TV Operations Manager, Management and Admin see everyone; supervisors see their own divisions. Add `divisionId=` for one division. |
 | `GET /reports/audit?from=&to=` | The audit log, newest first (Admin). Every saved change, with who made it. |
+| `POST /bookings/{id}/attendance` | `{ "slotId": "...", "arrived": true }`: the producer marks who has arrived |
+| `POST /bookings/{id}/signal` | `{ "slotId": "..." }`: the producer urgently signals someone who hasn't arrived |
+| `POST /bookings/{id}/departure` | The producer confirms a shoot has left the building |
 | `GET /notifications` | Your newest notifications |
 | `POST /notifications/{id}/read` | Mark one as read |
 | `PUT /bookings/{id}/crew` | `{ "assignments": [{ "slotId": "...", "operatorId": "..." }] }`. Studio crew: the Booking Officer or the division's supervisor. Outside crew: the division's supervisor. On a confirmed booking it replaces the operator. |

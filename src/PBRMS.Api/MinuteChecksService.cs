@@ -4,7 +4,8 @@ namespace PBRMS.Api;
 
 /// <summary>
 /// Runs the checks that depend on the clock, once a minute while the API is running: has
-/// a production gone overtime, and has the daily roster fallen due with crew undecided?
+/// a production gone overtime, has the daily roster fallen due with crew undecided, is a
+/// crew due its call, and has a shoot failed to leave?
 /// On IIS the site must be set to Always Running, or this stops when the site goes idle.
 /// </summary>
 public class MinuteChecksService(IServiceScopeFactory scopes, ILogger<MinuteChecksService> logger) : BackgroundService
@@ -20,6 +21,7 @@ public class MinuteChecksService(IServiceScopeFactory scopes, ILogger<MinuteChec
                 using var scope = scopes.CreateScope();
                 await scope.ServiceProvider.GetRequiredService<OvertimeWatcher>().CheckAsync(DateTimeOffset.UtcNow);
                 await scope.ServiceProvider.GetRequiredService<CrewDeadlineWatcher>().CheckAsync(DateTimeOffset.UtcNow);
+                await scope.ServiceProvider.GetRequiredService<ProductionDayWatcher>().CheckAsync(DateTimeOffset.UtcNow);
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {

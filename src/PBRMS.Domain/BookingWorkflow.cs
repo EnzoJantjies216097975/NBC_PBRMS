@@ -70,6 +70,18 @@ public static class BookingWorkflow
     /// </summary>
     public static readonly TimeSpan OverrunThreshold = TimeSpan.FromMinutes(30);
 
+    /// <summary>How long before the start the crew and producer are called (App Flow Document, "Production day").</summary>
+    public static readonly TimeSpan CrewCallNotice = TimeSpan.FromMinutes(60);
+
+    /// <summary>How long after its booked start a shoot can go without being confirmed as leaving (BR-11).</summary>
+    public static readonly TimeSpan DepartureGrace = TimeSpan.FromHours(2);
+
+    /// <summary>The venues where a production has to leave the building to happen.</summary>
+    public static readonly IReadOnlyList<Venue> OutsideVenues = [Venue.Location, Venue.Ob, Venue.FlyAway];
+
+    /// <summary>Does the producer confirm this production has left? Studio work never leaves, and a trip always does.</summary>
+    public static bool LeavesTheBuilding(Booking booking) => booking.IsTrip || OutsideVenues.Contains(booking.Venue);
+
     /// <summary>Besides the booking's own producer, these roles may cancel a booking.</summary>
     public static readonly IReadOnlyList<Role> CancelledBy =
         [Role.ExecutiveProducer, Role.BookingOfficer, Role.Admin];
@@ -103,10 +115,17 @@ public static class BookingWorkflow
             _ => HoldsRoleIn(userRoles, step.ActedBy, departmentChain)
         };
 
-    /// <summary>May this user cancel this booking? Its producer, the EP of its department, the Booking Officer or an Admin.</summary>
+    /// <summary>
+    /// May this user cancel this booking? Its producer, the EP of its department, the Booking
+    /// Officer or an Admin. So may a supervisor of its crew once a shoot is flagged as never
+    /// having left: that's how its crew is released (BR-11). PBRMS doesn't release them by
+    /// itself, because a producer forgetting to press a button would pull crew off a real shoot.
+    /// </summary>
     public static bool MayCancel(Booking booking, Guid userId, IEnumerable<RoleAssignment> userRoles, ISet<Guid> departmentChain) =>
         booking.ProducerId == userId
-        || CancelledBy.Any(role => HoldsRoleIn(userRoles, role, departmentChain));
+        || CancelledBy.Any(role => HoldsRoleIn(userRoles, role, departmentChain))
+        || (booking.DepartureMissedAt is not null
+            && HoldsRoleIn(userRoles, Role.Supervisor, booking.CrewSlots.Select(s => s.DivisionId).ToHashSet()));
 
     /// <summary>
     /// Who decides the crew. The Booking Officer books people in the studios. Supervisors
